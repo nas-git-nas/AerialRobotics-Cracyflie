@@ -1,4 +1,5 @@
 import numpy as np
+import skimage
 import matplotlib.pyplot as plt
 import multiprocessing
 
@@ -36,7 +37,7 @@ class ShowMap(multiprocessing.Process):
         
         while True:
             # Wait for the event to be set
-            if not self.event.wait(timeout=2):
+            if not self.event.wait(timeout=1):
                 # if waited too long -> free shared memory and exit process
                 existing_shm.close()
                 break

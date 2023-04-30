@@ -35,8 +35,8 @@ class OccupancyMap():
         self._contour_approx = 0.01 # approximation of the contours
 
         # initialize map and boarder
-        self._map = - np.ones((self._pos2idx(self._size_x[1]-self._size_x[0], dim="x"), 
-                               self._pos2idx(self._size_y[1]-self._size_y[0], dim="y")))
+        self._map = - np.ones((self._pos2idx(self._size_x[1], dim="x"), 
+                               self._pos2idx(self._size_y[1], dim="y")))
         self._boarder = - np.ones_like(self._map)
         self._boarder[0, :] = 1
         self._boarder[-1, :] = 1
@@ -68,12 +68,11 @@ class OccupancyMap():
 
         # create parallel process and event
         self.event = multiprocessing.Event()
-        x_ticks = np.round(np.linspace(0, self._map.shape[0], 12), 1)
-        y_ticks = np.round(np.linspace(0, self._map.shape[1], 8), 1)
-        x_labels = np.round(np.linspace(self._size_x[0], self._size_x[1], 12), 1)
-        y_labels = np.round(np.linspace(self._size_y[0], self._size_y[1], 8), 1)
+        x_ticks = np.linspace(0, self._map.shape[0], 13)
+        y_ticks = np.linspace(0, self._map.shape[1], 9)
+        x_labels = np.linspace(self._size_x[0], self._size_x[1], 13)
+        y_labels = np.linspace(self._size_y[0], self._size_y[1], 9)
         labels = (x_ticks, y_ticks, x_labels, y_labels)
-        print(labels)
         self.process = ShowMap(event=self.event, img_init=img_init, labels=labels)
         self.process.start()
 
@@ -91,6 +90,15 @@ class OccupancyMap():
         
         # trigger plotting event
         self.event.set()
+
+        # return next point on the path in meters
+        if len(path) > 1:
+            next_point = (self._idx2pos(path[1][0], "x"), self._idx2pos(path[1][1], "y"))
+        elif len(path) == 1:
+            next_point = (self._idx2pos(path[0][0], "x"), self._idx2pos(path[0][1], "y"))
+        else:
+            next_point = (sensor_data['x_global'], sensor_data['y_global'])
+        return next_point
 
 
     def _updateMap(self, sensor_data):
@@ -144,11 +152,11 @@ class OccupancyMap():
         self._map[:] = map_array[:]
         
     def _findPath(self, start, goal):
-        # copy the map
-        map_array = self._map.copy().astype(np.float32)
+        # copy the map and transpose it (because cv2 takes y-axis in 1. and x-axes in 2. dimension)
+        map_array = self._map.copy().astype(np.float32).transpose()
 
         # Threshold the map
-        thresholded_map = cv2.threshold(map_array, self._threshold, 1, cv2.THRESH_BINARY)[1]
+        _, thresholded_map = cv2.threshold(map_array, self._threshold, 1, cv2.THRESH_BINARY)
 
         # Dilate the obstacles on the map
         dilated_map =   cv2.dilate(
@@ -177,7 +185,7 @@ class OccupancyMap():
 
         # Create visibility graph
         graph = vg.VisGraph()
-        graph.build(vg_polygons)
+        graph.build(vg_polygons, status=False)
 
         # Get shortest path between two points
         vg_path = graph.shortest_path(vg.Point(start[0], start[1]), vg.Point(goal[0], goal[1]))
@@ -203,35 +211,36 @@ class OccupancyMap():
                     rr, cc = skimage.draw.line(poly[i][0], poly[i][1], poly[0][0], poly[0][1])        
                 else:
                     rr, cc = skimage.draw.line(poly[i][0], poly[i][1], poly[i+1][0], poly[i+1][1])
-                rr = np.clip(rr, 0, map_img.shape[0]-1)
-                cc = np.clip(cc, 0, map_img.shape[1]-1)
-                map_img[rr, cc, 0] = 0
-                map_img[rr, cc, 1] = 255
-                map_img[rr, cc, 2] = 0
+                rr = np.clip(rr, 0, self._map.shape[0]-1)
+                cc = np.clip(cc, 0, self._map.shape[1]-1)
+                map_img[cc, rr, 0] = 0
+                map_img[cc, rr, 1] = 255
+                map_img[cc, rr, 2] = 0
+                # print(f"poly: i: {i}, x: {self._idx2pos(rr, 'x')}")
+                # print(f"poly: i: {i}, rr: {rr}")
 
         # draw path in red
         for i in range(len(path)-1):
             # print(f"_drawMap: path[i]: {path[i]}, path[i+1]: {path[i+1]}")
-            rr, cc = skimage.draw.line(path[i][1], path[i][0], path[i+1][1], path[i+1][0])
-            rr = np.clip(rr, 0, map_img.shape[0]-1)
-            cc = np.clip(cc, 0, map_img.shape[1]-1)
-            map_img[rr, cc, 0] = 255
-            map_img[rr, cc, 1] = 0
-            map_img[rr, cc, 2] = 0
+            rr, cc = skimage.draw.line(path[i][0], path[i][1], path[i+1][0], path[i+1][1])
+            rr = np.clip(rr, 0, self._map.shape[0]-1) 
+            cc = np.clip(cc, 0, self._map.shape[1]-1)
+            map_img[cc, rr, 0] = 255
+            map_img[cc, rr, 1] = 0
+            map_img[cc, rr, 2] = 0
 
-        # draw heading in blue
+        # draw drone position and heading in blue
         x0 = self._pos2idx(sensor_data['x_global'], "x")
         y0 = self._pos2idx(sensor_data['y_global'], "y")
         x1 = self._pos2idx(sensor_data['x_global'] + 0.1 * np.cos(sensor_data['yaw']), "x")
         y1 = self._pos2idx(sensor_data['y_global'] + 0.1 * np.sin(sensor_data['yaw']), "y")
-        rr_line, cc_line = skimage.draw.line(y0, x0, y1, x1)
-        rr_circle, cc_circle, = skimage.draw.ellipse(y0, x0, r_radius=4, 
-                                                     c_radius=4, shape=map_array.shape)
+        rr_line, cc_line = skimage.draw.line(x0, y0, x1, y1)
+        rr_circle, cc_circle, = skimage.draw.ellipse(x0, y0, r_radius=4, c_radius=4, shape=self._map.shape)
         rr = np.concatenate((rr_line, rr_circle))
         cc = np.concatenate((cc_line, cc_circle))
-        map_img[rr, cc, 0] = 0
-        map_img[rr, cc, 1] = 0
-        map_img[rr, cc, 2] = 255
+        map_img[cc, rr, 0] = 0
+        map_img[cc, rr, 1] = 0
+        map_img[cc, rr, 2] = 255
 
         # save img
         self.img[:] = map_img[:]
