@@ -90,7 +90,7 @@ class MyController():
         
         # print(f"command: {command}")
 
-        self._map.update(sensor_data)
+        self._map.step(sensor_data, goal=self._points[self._points_idx])
         
         return command
         

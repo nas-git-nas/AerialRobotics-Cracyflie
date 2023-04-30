@@ -78,6 +78,9 @@ class ProcessMap():
         for point in path:
             xs.append(point.x)
             ys.append(point.y)
+
+        xs = np.round(xs, 0).astype(np.int32)
+        ys = np.round(ys, 0).astype(np.int32)
         ax.plot(xs, ys, color='red')
 
 
@@ -97,9 +100,9 @@ def test_process_map():
     #     [0, 0, 0, 1, 0]
     # ])
     obstacle_map = np.array([
-        [0, 0, 0, 0, 0],
-        [0, 1, 1, 0, 0],
-        [0, 1, 1, 0, 0],
+        [1, 1, 1, 0, 0],
+        [1, 1, 1, 0, 0],
+        [1, 1, 1, 0, 0],
         [0, 0, 0, 0, 0],
         [0, 0, 1, 1, 0],
         [0, 0, 0, 1, 0]
