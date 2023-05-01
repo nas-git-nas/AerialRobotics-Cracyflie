@@ -7,6 +7,7 @@
 # data['range_right'], data['range_down'], data['yaw_rate'].
 
 import numpy as np
+import time
 
 from occupancy_map import OccupancyMap
 
@@ -70,6 +71,9 @@ class MyController():
 
     # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
+
+        print("my_control: step_control")
+        # time.sleep(1)
 
         next_point, goal_in_obstacle = self._map.step(sensor_data, goal=self._points[self._points_idx])
 

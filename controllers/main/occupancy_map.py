@@ -11,6 +11,7 @@ import atexit
 
 # from parallel_process import ParallelProcess
 from show_map import ShowMap
+from visibility_graph import VisibilityGraph
 
 # def exit_handler():
 #     print('My application is ending!')
@@ -51,6 +52,9 @@ class OccupancyMap():
         #                   (self._map.shape[0],self._map.shape[1]),(self._map.shape[0],self._map.shape[1]-self._boarder_size)],
         #                  [(self._boarder_size,self._boarder_size+1), (0,self._boarder_size+1),
         #                   (0,self._map.shape[1]), (self._boarder_size,self._map.shape[1])]]
+
+        # initialize visibility graph
+        self.vg = VisibilityGraph()
                          
 
         # initialize image for visualization
@@ -87,6 +91,8 @@ class OccupancyMap():
         self.process.start()
 
     def step(self, sensor_data, goal):
+        print("occupancy_map: step called")
+
         # update the map with the new sensor data
         self._updateMap(sensor_data=sensor_data)
 
@@ -226,18 +232,20 @@ class OccupancyMap():
         # polygons = polygons + boarder
         # print(f'polygons2: len: {len(polygons)}, {polygons}')
 
-        # convert polygons to pyvisgraph points
-        vg_polygons = []
-        for poly in polygons:
-            vg_polygons.append([vg.Point(p[0], p[1]) for p in poly])
+        # # Create visibility graph
+        self.vg.buildGraph(polygons=polygons, start=start, goal=goal)
+        path = self.vg.findShortestPath()
 
-        # Create visibility graph
-        graph = vg.VisGraph()
-        graph.build(vg_polygons, status=False)
+        # # convert polygons to pyvisgraph points
+        # vg_polygons = []
+        # for poly in polygons:
+        #     vg_polygons.append([vg.Point(p[0], p[1]) for p in poly])
 
-        # Get shortest path between two points
-        vg_path = graph.shortest_path(vg.Point(start[0], start[1]), vg.Point(goal[0], goal[1]))
-        path = [(int(round(p.x, 0)), int(round(p.y, 0))) for p in vg_path]
+        # # Get shortest path between two points
+        # graph = vg.VisGraph()
+        # graph.build(vg_polygons)
+        # vg_path = graph.shortest_path(vg.Point(start[0], start[1]), vg.Point(goal[0], goal[1]))
+        # path = [(int(round(p.x, 0)), int(round(p.y, 0))) for p in vg_path]
 
         return polygons, path, goal_in_obstacle
     

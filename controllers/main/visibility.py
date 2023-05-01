@@ -5,11 +5,11 @@ class Visibility():
     def __init__(self) -> None:
         pass
 
-    def isVisible(self, p0, p1, polygones):
+    def isVisible(self, p0, p1, polygons):
         # create array that contains all possible line segment that could intersect with p0-q0
         q0 = np.empty((0,2), dtype=np.int32)
         q1 = np.empty((0,2), dtype=np.int32)
-        for poly in polygones:
+        for poly in polygons:
             q0 = np.concatenate((q0, np.array(poly, dtype=np.int32)), axis=0)
             q1 = np.concatenate((q1, np.roll(np.array(poly, dtype=np.int32), -1, axis=0)), axis=0)
 
@@ -81,11 +81,11 @@ def test_doIntersect():
 def test_isVisible():
     p0 = np.array([4,4])
     p1 = np.array([5,0])
-    # polygones = [[[2,2],[4,2],[4,4],[2,4]]]
-    polygones = [[[2,2],[4,2],[4,4],[2,4]], 
+    # polygons = [[[2,2],[4,2],[4,4],[2,4]]]
+    polygons = [[[2,2],[4,2],[4,4],[2,4]], 
                  [[5,0],[5,1],[6,1],[6,0]]]
     v = Visibility()
-    print(f"point is visible: {v.isVisible(p0, p1, polygones)}")
+    print(f"point is visible: {v.isVisible(p0, p1, polygons)}")
 
 if __name__ == "__main__":
     # test_doIntersect()
