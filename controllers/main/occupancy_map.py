@@ -6,6 +6,7 @@ import pyvisgraph as vg
 import multiprocessing
 from multiprocessing import shared_memory
 import time
+import copy
 import atexit
 
 # from parallel_process import ParallelProcess
@@ -18,30 +19,39 @@ from show_map import ShowMap
 
 class OccupancyMap():
     def __init__(self) -> None:
-        
-        # map parameters
-        self._range_max = 2 # maximum range of the sensor in meters
-        self._res = 0.01 # resolution of the map in meters      
-        self._size_x = (-0.5, 5.5) # map x limits in meters
-        self._size_y = (-0.5, 3.5) # map y limits in meters
 
         # update parameters
         self._alpha = 1.0 # learning rate of new measurements
         self._gamma = 1.0 # discount factor of old measurements
 
-        # map processing parameters
+        # map parameters
+        self._range_max = 2 # maximum range of the sensor in meters
+        self._res = 0.01 # resolution of the map in meters 
         self._threshold = 0.5 # threshold for occupied space
-        self._kernel_size = 40 # size of the kernel for morphological operations
+        object_extention = 0.15 # extention of the objects in meters
+        self._kernel_size = int(round(2*object_extention / self._res, 0)) # size of the kernel for morphological operations (must be odd)
         self._contour_approx = 0.01 # approximation of the contours
+        self._size_x = (0, 5) # map x limits in meters
+        self._size_y = (0, 3) # map y limits in meters
+        self._boarder_size = 10 # size of the boarder in pixels
 
         # initialize map and boarder
         self._map = - np.ones((self._pos2idx(self._size_x[1], dim="x"), 
                                self._pos2idx(self._size_y[1], dim="y")))
         self._boarder = - np.ones_like(self._map)
-        self._boarder[0, :] = 1
-        self._boarder[-1, :] = 1
-        self._boarder[:, 0] = 1
-        self._boarder[:, -1] = 1
+        self._boarder[0, self._pos2idx(3*object_extention, dim="y"):self._pos2idx(3-3*object_extention, dim="y")] = 1
+        self._boarder[-1, self._pos2idx(3*object_extention, dim="y"):self._pos2idx(3-3*object_extention, dim="y")] = 1
+        self._boarder[self._pos2idx(3*object_extention, dim="x"):self._pos2idx(5-3*object_extention, dim="x"), 0] = 1
+        self._boarder[self._pos2idx(3*object_extention, dim="x"):self._pos2idx(5-3*object_extention, dim="x"), -1] = 1
+        # self._boarder = [[(0,self._boarder_size), (0,0), 
+        #                   (self._map.shape[0]-self._boarder_size-1,0),(self._map.shape[0]-self._boarder_size-1,self._boarder_size)],
+        #                  [(self._map.shape[0]-self._boarder_size,0), (self._map.shape[0],0), 
+        #                   (self._map.shape[0],self._map.shape[1]-self._boarder_size-1),(self._map.shape[0]-self._boarder_size,self._map.shape[1]-self._boarder_size-1)],
+        #                  [(self._boarder_size+1,self._map.shape[1]-self._boarder_size), (self._boarder_size+1,self._map.shape[1]), 
+        #                   (self._map.shape[0],self._map.shape[1]),(self._map.shape[0],self._map.shape[1]-self._boarder_size)],
+        #                  [(self._boarder_size,self._boarder_size+1), (0,self._boarder_size+1),
+        #                   (0,self._map.shape[1]), (self._boarder_size,self._map.shape[1])]]
+                         
 
         # initialize image for visualization
         img_init = 255 * np.ones((self._map.shape[1], self._map.shape[0], 3), dtype=np.uint8)
@@ -68,10 +78,10 @@ class OccupancyMap():
 
         # create parallel process and event
         self.event = multiprocessing.Event()
-        x_ticks = np.linspace(0, self._map.shape[0], 13)
-        y_ticks = np.linspace(0, self._map.shape[1], 9)
-        x_labels = np.linspace(self._size_x[0], self._size_x[1], 13)
-        y_labels = np.linspace(self._size_y[0], self._size_y[1], 9)
+        x_ticks = np.linspace(0, self._map.shape[0], 11)
+        y_ticks = np.linspace(0, self._map.shape[1], 7)
+        x_labels = np.linspace(self._size_x[0], self._size_x[1], 11)
+        y_labels = np.linspace(self._size_y[0], self._size_y[1], 7)
         labels = (x_ticks, y_ticks, x_labels, y_labels)
         self.process = ShowMap(event=self.event, img_init=img_init, labels=labels)
         self.process.start()
@@ -83,7 +93,7 @@ class OccupancyMap():
         # find the shortest path from the current position to the goal
         start = (self._pos2idx(sensor_data['x_global'], "x"), self._pos2idx(sensor_data['y_global'], "y"))
         goal = (self._pos2idx(goal[0], "x"), self._pos2idx(goal[1], "y"))
-        polygons, path = self._findPath(start=start, goal=goal)
+        polygons, path, goal_in_obstacle = self._findPath(start=start, goal=goal)
 
         # draw map to image
         self._drawMap(polygons=polygons, path=path, sensor_data=sensor_data)
@@ -98,7 +108,7 @@ class OccupancyMap():
             next_point = (self._idx2pos(path[0][0], "x"), self._idx2pos(path[0][1], "y"))
         else:
             next_point = (sensor_data['x_global'], sensor_data['y_global'])
-        return next_point
+        return next_point, goal_in_obstacle
 
 
     def _updateMap(self, sensor_data):
@@ -140,9 +150,9 @@ class OccupancyMap():
         # discount the map
         map_array[map_array>=0] = self._gamma*map_array[map_array>=0]
 
-        # TODO: add boarder
-        # # add boarder 
-        # map_array[self._boarder==1] = 1
+        # # TODO: add boarder
+        # add boarder 
+        map_array[self._boarder==1] = 1
             
         # make sure the map is in the correct range
         if np.min(map_array) < -1 or np.max(map_array) > 1:
@@ -164,6 +174,11 @@ class OccupancyMap():
                             kernel = np.ones((self._kernel_size, self._kernel_size), np.uint8), 
                             iterations = 1
                         )
+        
+        # check if goal is in obstacle
+        goal_in_obstacle = False
+        if dilated_map[goal[1], goal[0]] == 1:
+            return [[]], [], True # return empty polygons, empty path and goal in obstacle
 
         # Extract the contours of the obstacles from the map using opencv
         contours, _ = cv2.findContours(dilated_map.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -178,6 +193,39 @@ class OccupancyMap():
             # Add the polygon to the list of polygons
             polygons.append(polygon_points)
 
+        # print(f'polygons: len: {len(polygons)}, {polygons}')
+
+        # polygons_in_boarder = []
+        # for i, poly in enumerate(polygons):
+        #     for j, p in enumerate(poly):
+        #         if p[0] <= self._boarder_size:
+        #             polygons[i][j] = (self._boarder_size, p[1])
+        #             polygons_in_boarder.append((i, 3))
+        #             break
+        #         elif p[0] >= self._map.shape[0]-self._boarder_size:
+        #             polygons[i][j] = (self._map.shape[0]-self._boarder_size, p[1])
+        #             polygons_in_boarder.append((i, 1))
+        #             break
+        #         if p[1] <= self._boarder_size:
+        #             polygons[i][j] = (p[0], self._boarder_size)
+        #             polygons_in_boarder.append((i, 0))
+        #             break
+        #         elif p[1] >= self._map.shape[1]-self._boarder_size:
+        #             polygons[i][j] = (p[0], self._map.shape[1]-self._boarder_size)
+        #             polygons_in_boarder.append((i, 2))
+        #             break
+
+        # boarder = copy.deepcopy(self._boarder)
+        # polygons_copy = copy.deepcopy(polygons)
+        # for poly, side in polygons_in_boarder:
+        #     print(f"Merging polygon {poly} with boarder {side}")
+        #     boarder[side] = boarder[side] + polygons_copy[poly]
+        #     del polygons[poly]
+
+        # # add boarder to polygons
+        # polygons = polygons + boarder
+        # print(f'polygons2: len: {len(polygons)}, {polygons}')
+
         # convert polygons to pyvisgraph points
         vg_polygons = []
         for poly in polygons:
@@ -191,7 +239,7 @@ class OccupancyMap():
         vg_path = graph.shortest_path(vg.Point(start[0], start[1]), vg.Point(goal[0], goal[1]))
         path = [(int(round(p.x, 0)), int(round(p.y, 0))) for p in vg_path]
 
-        return polygons, path
+        return polygons, path, goal_in_obstacle
     
     def _drawMap(self, polygons, path, sensor_data):
         # create image and copy map

@@ -71,7 +71,10 @@ class MyController():
     # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
 
-        next_point = self._map.step(sensor_data, goal=self._points[self._points_idx])
+        next_point, goal_in_obstacle = self._map.step(sensor_data, goal=self._points[self._points_idx])
+
+        if goal_in_obstacle:
+            self._incPointIndex()
 
         print(f"next_point: {next_point}")
         
@@ -188,25 +191,29 @@ class MyController():
         return command
     
     def _checkPoint(self, sensor_data, dist):
-        point_is_reached = False
 
         # increase point index if drone is close enough to the point
+        point_is_reached = False
         if self._dist2point(sensor_data, self._points[self._points_idx]) < dist:
             if self._verb:
                 print(f"_checkPoint: idx: {self._points_idx}, point: {self._points[self._points_idx]} reached")
         
-            self._points_idx += 1
+            self._incPointIndex()
             point_is_reached = True
 
-            # reset point index if it is out of range
-            if self._first_part:           
-                if self._points_idx >= self._starting_region_idx:
-                    self._points_idx = 0
-            else:
-                if self._points_idx >= len(self._points):
-                    self._points_idx = self._starting_region_idx
-
         return point_is_reached
+    
+    def _incPointIndex(self):
+        # increase point index
+        self._points_idx += 1
+
+        # reset point index if it is out of range
+        if self._first_part:           
+            if self._points_idx >= self._starting_region_idx:
+                self._points_idx = 0
+        else:
+            if self._points_idx >= len(self._points):
+                self._points_idx = self._starting_region_idx
     
     # def _move(self, sensor_data, next_point):
     #     # command = [0.0, 0.0, 0.0, self._height_desired]
