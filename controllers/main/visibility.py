@@ -1,17 +1,41 @@
 import numpy as np
+import copy
 
 
 class Visibility():
     def __init__(self) -> None:
-        pass
+        self._in_polygon_point = None
+        self._in_polygon_idx = None
+
+    def setPointInPolygon(self, point, idx):
+        self._in_polygon_point = copy.copy(point)
+        self._in_polygon_idx = idx
+
+    def clearPointInPolygon(self):
+        self._in_polygon_point = None
+        self._in_polygon_idx = None
 
     def isVisible(self, p0, p1, polygons):
         # create array that contains all possible line segment that could intersect with p0-q0
         q0 = np.empty((0,2), dtype=np.int32)
         q1 = np.empty((0,2), dtype=np.int32)
-        for poly in polygons:
-            q0 = np.concatenate((q0, np.array(poly, dtype=np.int32)), axis=0)
-            q1 = np.concatenate((q1, np.roll(np.array(poly, dtype=np.int32), -1, axis=0)), axis=0)
+
+        # determine if p0 or p1 is inside a polygon
+        if self._in_polygon_point is not None \
+            and ((p0[0]==self._in_polygon_point[0] and p0[1]==self._in_polygon_point[1]) 
+                 or (p1[0]==self._in_polygon_point[0] and p1[1]==self._in_polygon_point[1])):
+            # only consider polygon that contains p0 or p1 but all possible line segments
+            for i in range(len(polygons[self._in_polygon_idx])):
+                q0 = np.concatenate((q0, np.array(polygons[self._in_polygon_idx], dtype=np.int32)), axis=0)
+                q1 = np.concatenate((q1, np.roll(np.array(polygons[self._in_polygon_idx], dtype=np.int32), -i, axis=0)), axis=0)
+
+            # print(f"q0: {q0}")
+            # print(f"q1: {q1}")
+        else:
+            # consider all polygons but only line segments of points that are next to each other
+            for poly in polygons:
+                q0 = np.concatenate((q0, np.array(poly, dtype=np.int32)), axis=0)
+                q1 = np.concatenate((q1, np.roll(np.array(poly, dtype=np.int32), -1, axis=0)), axis=0)
 
         # remove line segments that contain p0 or p1
         contain_p0 = (q0 == p0).all(axis=1) | (q1 == p0).all(axis=1)
@@ -24,6 +48,53 @@ class Visibility():
         p1 = np.tile(p1, (q0.shape[0],1))
         do_intersect = self._doIntersect(p0, p1, q0, q1)
         return not np.any(do_intersect)
+    
+    def insidePolygon(self, polygons, point):
+        # create array that contains all possible line segment that could intersect with p0-q0
+        q0 = np.empty((0,2), dtype=np.int32)
+        q1 = np.empty((0,2), dtype=np.int32)
+        nb_points = 0
+        poly_idx = []
+        for poly in polygons:
+            q0 = np.concatenate((q0, np.array(poly, dtype=np.int32)), axis=0)
+            q1 = np.concatenate((q1, np.roll(np.array(poly, dtype=np.int32), -1, axis=0)), axis=0)
+            poly_idx.append(nb_points)
+            nb_points += len(poly)
+
+        # create line segment from point to the right (negative y direction)
+        p0 = np.tile(point, (q0.shape[0],1))
+        p1 = np.tile((point[0],0), (q0.shape[0],1))
+
+        # determine if point is on polygon outline
+        onSegment = self._onSegment(q0, p0, q1)
+        # print(f"onSegment: {onSegment}, disc. {poly_idx < np.argmax(onSegment)}, idx: {np.argmax(onSegment)}, poly_idx: {poly_idx}")
+        if np.any(onSegment):
+            # return index of polygon on which the point is on
+            idx = np.argmax(onSegment) # point index of first True value
+            
+            # convert point index to polygon index
+            for j in range(len(poly_idx)-1):
+                if poly_idx[j] <= idx and idx < poly_idx[j+1]:
+                    return j 
+            return len(poly_idx)-1
+
+        # determine if point is inside polygon
+        do_intersect = self._doIntersect(p0, p1, q0, q1)
+        # print(f"do_intersect: {do_intersect}")
+        for idx in range(len(poly_idx)):
+            # determine range of polygon indices
+            if idx == len(poly_idx)-1:
+                idx_range = (poly_idx[idx], len(do_intersect))
+            else:
+                idx_range = (poly_idx[idx], poly_idx[idx+1])
+            
+            # count number of intersections with polygon
+            nb_intersections = np.sum(do_intersect[idx_range[0]:idx_range[1]])
+            # print(f"idx: {idx}, nb_intersections: {nb_intersections}, range: {idx_range}")
+            if nb_intersections % 2 == 1:
+                return idx # polygon index
+            
+        return False # point is outside all polygons
     
     def _doIntersect(self, p0, p1, q0, q1):
         # logical array indicating if the line segments intersect
@@ -80,13 +151,24 @@ def test_doIntersect():
 
 def test_isVisible():
     p0 = np.array([4,4])
-    p1 = np.array([5,0])
+    p1 = np.array([5,2])
     # polygons = [[[2,2],[4,2],[4,4],[2,4]]]
-    polygons = [[[2,2],[4,2],[4,4],[2,4]], 
-                 [[5,0],[5,1],[6,1],[6,0]]]
+    # polygons = [[[2,2],[5,2],[5,5],[2,5]], 
+    #              [[5,0],[5,1],[6,1],[6,0]]]
+    polygons = [[[2,2],[5,2],[5,5],[2,5]]]
     v = Visibility()
+    v.setPointInPolygon(point=(4,4), idx=0)
     print(f"point is visible: {v.isVisible(p0, p1, polygons)}")
+
+def test_insidePolygon():
+    point = np.array([5,1])
+    polygons = [[[2,2],[4,2],[4,4],[2,4]], 
+                 [[5,0],[5,1],[6,1],[6,0]],
+                 [[8,8],[8,10],[10,10],[10,8]]]
+    v = Visibility()
+    print(f"point is inside polygon: {v.insidePolygon(point=point, polygons=polygons)}")
 
 if __name__ == "__main__":
     # test_doIntersect()
     test_isVisible()
+    # test_insidePolygon()

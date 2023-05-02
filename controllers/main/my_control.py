@@ -60,12 +60,17 @@ class MyController():
 
         self.map = OccupancyMap()
 
+        self.real_theta = 0.0
+        self.theta_lr = 0.1
+        self.desired_speed = 0.2
+
     # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
 
         next_point, goal_in_obstacle = self.map.step(sensor_data, goal=self._points[self._points_idx], state=self._state)
         if goal_in_obstacle:
             self._incPointIndex()
+            print("goal in obstacle, inc point index ------------------------------------------")
               
         # global path planner: state machine
         if self._state == "takeoff":
@@ -81,8 +86,24 @@ class MyController():
         
         # print(f"next_point: {next_point}")
         # print(f"command: {command}")
+
+        desired_theta = np.arctan2(command[1], command[0])
+        theta_error = desired_theta - self.real_theta
+        if theta_error > np.pi:
+            desired_theta -= 2*np.pi
+        elif theta_error < -np.pi:
+            desired_theta += 2*np.pi
         
-        return command
+        self.real_theta = (1-self.theta_lr)*self.real_theta + self.theta_lr*desired_theta
+        speed = np.clip((1-abs(desired_theta-self.real_theta)/np.pi), 0.1, 1) * self.desired_speed
+        real_command = [speed*np.cos(self.real_theta), speed*np.sin(self.real_theta), command[2], command[3]]
+
+        if self.real_theta > np.pi:
+            self.real_theta -= 2*np.pi
+        elif self.real_theta < -np.pi:
+            self.real_theta += 2*np.pi
+        
+        return real_command
         
 
     def _takeoff(self, sensor_data):
@@ -184,6 +205,7 @@ class MyController():
         
             self._incPointIndex()
             point_is_reached = True
+            print("Go to next point -------------------------------")
 
         return point_is_reached
     

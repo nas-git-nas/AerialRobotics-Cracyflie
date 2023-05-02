@@ -17,9 +17,19 @@ class VisibilityGraph():
         self._poly_idx = None # list of starting indices of each polygone
         self._shortest_path = None # list of points of shortest path
 
+    def setPointInPolygon(self, polygons, start, in_polygon):
+        # determine in which polygon start point is located
+        if in_polygon:
+            in_polygon_idx = self.vis.insidePolygon(polygons=polygons[:], point=start) + 1 # +1 because start point is added at index 0
+            self.vis.setPointInPolygon(point=start, idx=in_polygon_idx)
+            print(f"In polygone: {in_polygon_idx}")
+        else:
+            self.vis.clearPointInPolygon()        
+
     def buildGraph(self, polygons, start, goal):
+        polygons = copy.deepcopy(polygons)           
+
         # add start and goal point to polygons
-        polygons = copy.deepcopy(polygons)
         polygons = [[start]] + polygons + [[goal]]
 
         # calculate total number of points and starting index of each polygone
@@ -59,12 +69,19 @@ class VisibilityGraph():
                         checked[idx0, idx1] = True
                         checked[idx1, idx0] = True
 
+        print(f"graph: {graph[0]}")
+
         self._graph = graph
         self._polygons = polygons
         self._poly_idx = poly_idx
 
     def findShortestPath(self):
         path = self.dijkstra.findShortestPath(self._graph)
+
+        # return empty list if no path was found
+        if len(path) == 0:
+            self._shortest_path = []
+            return []
 
         # convert path indices to points
         path_points = []

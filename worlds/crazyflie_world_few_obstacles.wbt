@@ -8,8 +8,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation 0.24367656280721767 0.9484732083089311 -0.2025347028502105 1.6370202328759487
-  position 2.4478926611990355 1.150220703607455 11.646121898743443
+  orientation -0.524645684991303 0.5687993609114881 0.6334147079494519 2.009448326160174
+  position 1.7290902226133427 -0.10165775974861879 7.680158462081778
   follow "crazyflie"
 }
 TexturedBackground {
@@ -219,7 +219,7 @@ DEF CHECKERBOARD_A4_25mm_8x6 Solid {
   name "checkerboard"
 }
 DEF OBSTACLE1 Solid {
-  translation 2.37 0.67 0.74
+  translation 1.73 0.79 0.74
   children [
     DEF CYLINDER_SHAPE Shape {
       appearance PBRAppearance {

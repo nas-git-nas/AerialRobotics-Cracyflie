@@ -36,7 +36,7 @@ class Dijkstra():
     def _calcPath(self, dist, prev):
         # verify if path from start to end point exists
         if dist[-1] == np.Inf:
-            return None
+            return []
 
         # determine shortest path
         idx = dist.shape[0]-1

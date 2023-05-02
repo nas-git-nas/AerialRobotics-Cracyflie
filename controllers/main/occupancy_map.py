@@ -12,6 +12,7 @@ import atexit
 # from parallel_process import ParallelProcess
 from show_map import ShowMap
 from visibility_graph import VisibilityGraph
+from visibility import Visibility
 
 # def exit_handler():
 #     print('My application is ending!')
@@ -46,7 +47,8 @@ class OccupancyMap():
                          (self._boarder_size,self._map.shape[1]-self._boarder_size)]
 
         # initialize visibility graph
-        self.vg = VisibilityGraph()                     
+        self.vg = VisibilityGraph()  
+        self.vis = Visibility()                   
 
         # initialize image for visualization
         img_init = 255 * np.ones((self._map.shape[1], self._map.shape[0], 3), dtype=np.uint8)
@@ -81,6 +83,10 @@ class OccupancyMap():
         self.process = ShowMap(event=self.event, img_init=img_init, labels=labels)
         self.process.start()
 
+        self.center_polygon = (0,0)
+        self.polygone_escape_counter = 0
+        self.ecape_goal = False
+
     def __del__(self):
         # free shared memory
         self.shm.close()
@@ -113,6 +119,7 @@ class OccupancyMap():
             next_point = (self._idx2pos(path[1][0], "x"), self._idx2pos(path[1][1], "y"))
         else:
             next_point = (sensor_data['x_global'], sensor_data['y_global'])
+            print(f"Warning: path is empty, next point is current position")
         return next_point, goal_in_obstacle
 
 
@@ -206,22 +213,53 @@ class OccupancyMap():
         # time_s = time.time()
 
         # check if start is in obstacle
-        if dilated_map[start[1], start[0]] == 1:
-            # find closest point of obstacle and move out
-            path = self._moveOutOfObstacle(polygons, start)
-            print(f"Start in obstacle - > path: {path}")
-        else:
-            # filter polygons for better performance
-            polygons = self._filterPolygons(polygons, start)
 
-            # add boarder to polygons
-            polygons.append(self._boarder)
+        # filter polygons for better performance
+        polygons = self._filterPolygons(polygons, start)
 
-            # Create visibility graph
-            self.vg.buildGraph(polygons=polygons, start=start, goal=goal)
-            path = self.vg.findShortestPath()
+        # verify if start is in any polygon (except the boarder)
+        self.vg.setPointInPolygon(polygons=polygons, start=start, in_polygon=dilated_map[start[1], start[0]])    
 
-            print("Start out of obstacle - > find shortest path")
+        # add boarder to polygons
+        polygons.append(self._boarder)
+
+        # polygons.append([[35,35],[35,250],[225,250],[225,35]])
+
+        # Create visibility graph
+        self.vg.buildGraph(polygons=polygons, start=start, goal=goal)
+        path = self.vg.findShortestPath()
+        
+        # if dilated_map[start[1], start[0]] == 1 and self.polygone_escape_counter == 0:
+        #     # find closest point of obstacle and move out
+        #     path = self._moveOutOfObstacle(polygons, start)
+        #     print(f"Start in obstacle - > path: {path}")
+
+        #     self.polygone_escape_counter = 1
+
+            
+        # elif self.polygone_escape_counter > 0:
+        #     path = [start, self.ecape_goal]
+
+        #     self.polygone_escape_counter += 1
+        #     if self.polygone_escape_counter > 50:
+        #         self.polygone_escape_counter = 0
+
+        #     time.sleep(0.2)
+        #     print(f"Escape polygone - > path: {path}")
+
+        # else:
+        #     self.center_polygon = (0,0)
+        #     # filter polygons for better performance
+        #     polygons = self._filterPolygons(polygons, start)
+
+        #     # add boarder to polygons
+        #     polygons.append(self._boarder)
+
+        #     # Create visibility graph
+        #     self.vg.buildGraph(polygons=polygons, start=start, goal=goal)
+        #     path = self.vg.findShortestPath()
+
+        #     print("Start out of obstacle - > find shortest path")
 
         # print(f"Time to find path: {time.time()-time_s:.3f}")
 
@@ -241,26 +279,32 @@ class OccupancyMap():
     def _moveOutOfObstacle(self, polygons, start):
 
 
-        # TODO: identify which polygon the start is in !
+        idx = self.vis.insidePolygon(polygons=polygons, point=start)
+        closest_polygon = polygons[idx]
 
 
         # find closest point of obstacle and move out
-        closest_dist = np.inf
-        closest_polygon = None
-        for poly in polygons:
-            for p in poly:
-                dist = np.sqrt((p[0]-start[0])**2 + (p[1]-start[1])**2)
-                if dist < closest_dist:
-                    closest_dist = dist
-                    closest_polygon = poly
+        # closest_dist = np.inf
+        # closest_polygon = None
+        # for poly in polygons:
+        #     for p in poly:
+        #         dist = np.sqrt((p[0]-start[0])**2 + (p[1]-start[1])**2)
+        #         if dist < closest_dist:
+        #             closest_dist = dist
+        #             closest_polygon = poly
 
-        print(f"       Closest polygon: {closest_polygon}")
+        
         
         # calculate mean of closest polygon and move away from it
         x_mean = np.mean([p[0] for p in closest_polygon], dtype=np.uint32)
         y_mean = np.mean([p[1] for p in closest_polygon], dtype=np.uint32)
         goal = (np.clip(2*start[0]-x_mean, 0, self._map.shape[0]), np.clip(2*start[1]-y_mean, 0, self._map.shape[1]))
         path = [start, goal]
+        print(f"       idx: {idx}, center: ({x_mean}, {y_mean}), direction: ({goal[0]-start[0]}, {goal[1]-start[1]}), pos: {start}, goal: {goal}")
+
+        self.center_polygon = (x_mean, y_mean)
+        self.ecape_goal = goal
+        # time.sleep(0.1)
         return path
     
     def _filterPolygons(self, polygons, start):
@@ -301,6 +345,12 @@ class OccupancyMap():
                 map_img[cc, rr, 0] = 0
                 map_img[cc, rr, 1] = 255
                 map_img[cc, rr, 2] = 0
+
+        # draw center of polygon in green
+        rr, cc = skimage.draw.ellipse(self.center_polygon[0], self.center_polygon[1], r_radius=4, c_radius=4, shape=self._map.shape)
+        map_img[cc, rr, 0] = 0
+        map_img[cc, rr, 1] = 0
+        map_img[cc, rr, 2] = 255
 
         # draw path in red
         for i in range(len(path)-1):
