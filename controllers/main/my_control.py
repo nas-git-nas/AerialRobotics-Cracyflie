@@ -42,7 +42,6 @@ class MyController():
         """
         self._first_part = True 
 
-
         landing_region_points = [(3.70, 0.20), (4.80, 0.20), (4.80, 0.50), (3.70, 0.50),
                                     (3.70, 0.80), (4.80, 0.80), (4.80, 1.10), (3.70, 1.10),
                                     (3.70, 1.40), (4.80, 1.40), (4.80, 1.70), (3.70, 1.70),
@@ -56,52 +55,32 @@ class MyController():
         self._landing_region_idx = 0
         self._starting_region_idx = len(landing_region_points)
 
-        # # self._obstacle_delay = 20 # number of steps to delay after obstacle avoidance
-        # # self._obstacle_counter = 0
-        # # self._last_command = [0.0, 0.0, 0.0, 0.0]
-        # # self._last_sensors = [False, False, False, False]
-        # self._avoid_critical = [False, False, False, False]
-        # self._avoid_direction = 1
-        # self._state_before_avoid = "takeoff"
+        self._reset_counter = 0
 
-        # self._reset_counter = 0
-        # self._avoid_counter = 0
 
-        self._map = OccupancyMap()
+        self.map = OccupancyMap()
 
     # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
 
-        print("my_control: step_control")
-        # time.sleep(1)
-
-        next_point, goal_in_obstacle = self._map.step(sensor_data, goal=self._points[self._points_idx])
-
+        next_point, goal_in_obstacle = self.map.step(sensor_data, goal=self._points[self._points_idx], state=self._state)
         if goal_in_obstacle:
             self._incPointIndex()
-
-        print(f"next_point: {next_point}")
-        
+              
         # global path planner: state machine
         if self._state == "takeoff":
             command = self._takeoff(sensor_data)
-        # elif self._state == "move":
-        #     command = self._move(sensor_data, next_point)
-        elif self._state == "search":
+        elif self._state == "search":          
             command = self._search(sensor_data, next_point)
         elif self._state == "land":
-            command = self._land(sensor_data)
-        # elif self._state == "avoid":
-            # local path planner: obstacle avoidance
-            # command = self._avoid(sensor_data)          
+            command = self._land(sensor_data)  
         elif self._state == "reset":
             command = self._reset(sensor_data)
         else:
             raise Exception("Invalid state")
         
+        # print(f"next_point: {next_point}")
         # print(f"command: {command}")
-
-        
         
         return command
         
@@ -160,16 +139,17 @@ class MyController():
     
     def _reset(self, senor_data):
         command = [0.0, 0.0, 0.0, 0.0]
-        # self._reset_counter += 1
-        
-        # if self._first_part and self._reset_counter > 100:
-        #     self._state = "takeoff"
-        #     self._first_part = False
-        #     self._points_idx = self._starting_region_idx
-        #     self._reset_counter = 0
 
-        #     if self._verb:
-        #         print("_reset: reset -> takeoff")
+        # return to starting area
+        self._reset_counter += 1
+        if self._first_part and self._reset_counter > 20:
+            self._state = "takeoff"
+            self._first_part = False
+            self._points_idx = self._starting_region_idx
+            self._reset_counter = 0
+
+            if self._verb:
+                print("_reset: reset -> takeoff")
 
         return command
     

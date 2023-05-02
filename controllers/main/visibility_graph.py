@@ -18,7 +18,6 @@ class VisibilityGraph():
         self._shortest_path = None # list of points of shortest path
 
     def buildGraph(self, polygons, start, goal):
-        print("Building visibility graph...")
         # add start and goal point to polygons
         polygons = copy.deepcopy(polygons)
         polygons = [[start]] + polygons + [[goal]]
@@ -65,7 +64,6 @@ class VisibilityGraph():
         self._poly_idx = poly_idx
 
     def findShortestPath(self):
-        print("Finding shortest path...")
         path = self.dijkstra.findShortestPath(self._graph)
 
         # convert path indices to points
@@ -76,7 +74,6 @@ class VisibilityGraph():
             path_points.append(self._polygons[idx][p-poly_idx[idx]])
 
         self._shortest_path = path_points
-        print("Shortest path: ", path_points)
         return path_points
 
     def drawGraph(self):

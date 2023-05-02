@@ -31,31 +31,22 @@ class OccupancyMap():
         self._threshold = 0.5 # threshold for occupied space
         object_extention = 0.15 # extention of the objects in meters
         self._kernel_size = int(round(2*object_extention / self._res, 0)) # size of the kernel for morphological operations (must be odd)
-        self._contour_approx = 0.01 # approximation of the contours
+        self._contour_approx = 0.02 # approximation of the contours
         self._size_x = (0, 5) # map x limits in meters
         self._size_y = (0, 3) # map y limits in meters
-        self._boarder_size = 10 # size of the boarder in pixels
+        self._boarder_size = int(round(0.1/self._res, 0)) # size of the boarder in pixels
+        self._polygon_filter_dist = 0.8/self._res # filter polygons with a distance smaller than this value
 
         # initialize map and boarder
         self._map = - np.ones((self._pos2idx(self._size_x[1], dim="x"), 
                                self._pos2idx(self._size_y[1], dim="y")))
-        self._boarder = - np.ones_like(self._map)
-        self._boarder[0, self._pos2idx(3*object_extention, dim="y"):self._pos2idx(3-3*object_extention, dim="y")] = 1
-        self._boarder[-1, self._pos2idx(3*object_extention, dim="y"):self._pos2idx(3-3*object_extention, dim="y")] = 1
-        self._boarder[self._pos2idx(3*object_extention, dim="x"):self._pos2idx(5-3*object_extention, dim="x"), 0] = 1
-        self._boarder[self._pos2idx(3*object_extention, dim="x"):self._pos2idx(5-3*object_extention, dim="x"), -1] = 1
-        # self._boarder = [[(0,self._boarder_size), (0,0), 
-        #                   (self._map.shape[0]-self._boarder_size-1,0),(self._map.shape[0]-self._boarder_size-1,self._boarder_size)],
-        #                  [(self._map.shape[0]-self._boarder_size,0), (self._map.shape[0],0), 
-        #                   (self._map.shape[0],self._map.shape[1]-self._boarder_size-1),(self._map.shape[0]-self._boarder_size,self._map.shape[1]-self._boarder_size-1)],
-        #                  [(self._boarder_size+1,self._map.shape[1]-self._boarder_size), (self._boarder_size+1,self._map.shape[1]), 
-        #                   (self._map.shape[0],self._map.shape[1]),(self._map.shape[0],self._map.shape[1]-self._boarder_size)],
-        #                  [(self._boarder_size,self._boarder_size+1), (0,self._boarder_size+1),
-        #                   (0,self._map.shape[1]), (self._boarder_size,self._map.shape[1])]]
+        self._boarder = [(self._boarder_size,self._boarder_size), 
+                         (self._map.shape[0]-self._boarder_size,self._boarder_size),
+                         (self._map.shape[0]-self._boarder_size,self._map.shape[1]-self._boarder_size), 
+                         (self._boarder_size,self._map.shape[1]-self._boarder_size)]
 
         # initialize visibility graph
-        self.vg = VisibilityGraph()
-                         
+        self.vg = VisibilityGraph()                     
 
         # initialize image for visualization
         img_init = 255 * np.ones((self._map.shape[1], self._map.shape[0], 3), dtype=np.uint8)
@@ -90,19 +81,29 @@ class OccupancyMap():
         self.process = ShowMap(event=self.event, img_init=img_init, labels=labels)
         self.process.start()
 
-    def step(self, sensor_data, goal):
-        print("occupancy_map: step called")
+    def __del__(self):
+        # free shared memory
+        self.shm.close()
+        self.shm.unlink()
+
+    def step(self, sensor_data, goal, state):
 
         # update the map with the new sensor data
+        # time_start = time.time()
         self._updateMap(sensor_data=sensor_data)
+        # print(f"Time for update map: {time.time()-time_start:.3f} s")
 
-        # find the shortest path from the current position to the goal
-        start = (self._pos2idx(sensor_data['x_global'], "x"), self._pos2idx(sensor_data['y_global'], "y"))
-        goal = (self._pos2idx(goal[0], "x"), self._pos2idx(goal[1], "y"))
-        polygons, path, goal_in_obstacle = self._findPath(start=start, goal=goal)
+        if state == "search":
+            # find the shortest path from the current position to the goal    
+            polygons, path, goal_in_obstacle = self._findPath(sensor_data=sensor_data, goal=goal)
+        else:
+            polygons, path = [[]], []
+            goal_in_obstacle = False
 
         # draw map to image
+        # time_start = time.time()
         self._drawMap(polygons=polygons, path=path, sensor_data=sensor_data)
+        # print(f"Time for draw map: {time.time()-time_start:.3f} s")
         
         # trigger plotting event
         self.event.set()
@@ -110,8 +111,6 @@ class OccupancyMap():
         # return next point on the path in meters
         if len(path) > 1:
             next_point = (self._idx2pos(path[1][0], "x"), self._idx2pos(path[1][1], "y"))
-        elif len(path) == 1:
-            next_point = (self._idx2pos(path[0][0], "x"), self._idx2pos(path[0][1], "y"))
         else:
             next_point = (sensor_data['x_global'], sensor_data['y_global'])
         return next_point, goal_in_obstacle
@@ -155,10 +154,6 @@ class OccupancyMap():
 
         # discount the map
         map_array[map_array>=0] = self._gamma*map_array[map_array>=0]
-
-        # # TODO: add boarder
-        # add boarder 
-        map_array[self._boarder==1] = 1
             
         # make sure the map is in the correct range
         if np.min(map_array) < -1 or np.max(map_array) > 1:
@@ -167,7 +162,13 @@ class OccupancyMap():
         # save the map
         self._map[:] = map_array[:]
         
-    def _findPath(self, start, goal):
+    def _findPath(self, sensor_data, goal):
+        # time_s = time.time()
+
+        # convert the start and goal position to indices
+        start = (self._pos2idx(sensor_data['x_global'], "x"), self._pos2idx(sensor_data['y_global'], "y"))
+        goal = (self._pos2idx(goal[0], "x"), self._pos2idx(goal[1], "y"))
+
         # copy the map and transpose it (because cv2 takes y-axis in 1. and x-axes in 2. dimension)
         map_array = self._map.copy().astype(np.float32).transpose()
 
@@ -199,42 +200,30 @@ class OccupancyMap():
             # Add the polygon to the list of polygons
             polygons.append(polygon_points)
 
-        # print(f'polygons: len: {len(polygons)}, {polygons}')
+        
 
-        # polygons_in_boarder = []
-        # for i, poly in enumerate(polygons):
-        #     for j, p in enumerate(poly):
-        #         if p[0] <= self._boarder_size:
-        #             polygons[i][j] = (self._boarder_size, p[1])
-        #             polygons_in_boarder.append((i, 3))
-        #             break
-        #         elif p[0] >= self._map.shape[0]-self._boarder_size:
-        #             polygons[i][j] = (self._map.shape[0]-self._boarder_size, p[1])
-        #             polygons_in_boarder.append((i, 1))
-        #             break
-        #         if p[1] <= self._boarder_size:
-        #             polygons[i][j] = (p[0], self._boarder_size)
-        #             polygons_in_boarder.append((i, 0))
-        #             break
-        #         elif p[1] >= self._map.shape[1]-self._boarder_size:
-        #             polygons[i][j] = (p[0], self._map.shape[1]-self._boarder_size)
-        #             polygons_in_boarder.append((i, 2))
-        #             break
+        # print(f"Time to find polygons: {time.time()-time_s:.3f}")
+        # time_s = time.time()
 
-        # boarder = copy.deepcopy(self._boarder)
-        # polygons_copy = copy.deepcopy(polygons)
-        # for poly, side in polygons_in_boarder:
-        #     print(f"Merging polygon {poly} with boarder {side}")
-        #     boarder[side] = boarder[side] + polygons_copy[poly]
-        #     del polygons[poly]
+        # check if start is in obstacle
+        if dilated_map[start[1], start[0]] == 1:
+            # find closest point of obstacle and move out
+            path = self._moveOutOfObstacle(polygons, start)
+            print(f"Start in obstacle - > path: {path}")
+        else:
+            # filter polygons for better performance
+            polygons = self._filterPolygons(polygons, start)
 
-        # # add boarder to polygons
-        # polygons = polygons + boarder
-        # print(f'polygons2: len: {len(polygons)}, {polygons}')
+            # add boarder to polygons
+            polygons.append(self._boarder)
 
-        # # Create visibility graph
-        self.vg.buildGraph(polygons=polygons, start=start, goal=goal)
-        path = self.vg.findShortestPath()
+            # Create visibility graph
+            self.vg.buildGraph(polygons=polygons, start=start, goal=goal)
+            path = self.vg.findShortestPath()
+
+            print("Start out of obstacle - > find shortest path")
+
+        # print(f"Time to find path: {time.time()-time_s:.3f}")
 
         # # convert polygons to pyvisgraph points
         # vg_polygons = []
@@ -248,6 +237,46 @@ class OccupancyMap():
         # path = [(int(round(p.x, 0)), int(round(p.y, 0))) for p in vg_path]
 
         return polygons, path, goal_in_obstacle
+    
+    def _moveOutOfObstacle(self, polygons, start):
+
+
+        # TODO: identify which polygon the start is in !
+
+
+        # find closest point of obstacle and move out
+        closest_dist = np.inf
+        closest_polygon = None
+        for poly in polygons:
+            for p in poly:
+                dist = np.sqrt((p[0]-start[0])**2 + (p[1]-start[1])**2)
+                if dist < closest_dist:
+                    closest_dist = dist
+                    closest_polygon = poly
+
+        print(f"       Closest polygon: {closest_polygon}")
+        
+        # calculate mean of closest polygon and move away from it
+        x_mean = np.mean([p[0] for p in closest_polygon], dtype=np.uint32)
+        y_mean = np.mean([p[1] for p in closest_polygon], dtype=np.uint32)
+        goal = (np.clip(2*start[0]-x_mean, 0, self._map.shape[0]), np.clip(2*start[1]-y_mean, 0, self._map.shape[1]))
+        path = [start, goal]
+        return path
+    
+    def _filterPolygons(self, polygons, start):
+        # filter polygons
+        filtered_polygons = []
+        for poly in polygons:
+            # calculate mean of polygon
+            x_mean = np.mean([p[0] for p in poly], dtype=np.uint32)
+            y_mean = np.mean([p[1] for p in poly], dtype=np.uint32)
+
+            # check if polygon is close enough
+            dist = np.sqrt((x_mean-start[0])**2 + (y_mean-start[1])**2)
+            if dist < self._polygon_filter_dist:
+                filtered_polygons.append(poly)
+        
+        return filtered_polygons
     
     def _drawMap(self, polygons, path, sensor_data):
         # create image and copy map
@@ -272,8 +301,6 @@ class OccupancyMap():
                 map_img[cc, rr, 0] = 0
                 map_img[cc, rr, 1] = 255
                 map_img[cc, rr, 2] = 0
-                # print(f"poly: i: {i}, x: {self._idx2pos(rr, 'x')}")
-                # print(f"poly: i: {i}, rr: {rr}")
 
         # draw path in red
         for i in range(len(path)-1):
@@ -300,10 +327,6 @@ class OccupancyMap():
 
         # save img
         self.img[:] = map_img[:]
-
-    def freeSharedMemory(self): # TODO
-        self.shm.close()
-        self.shm.unlink()
     
     def _pos2idx(self, pos, dim):
         if dim == "x":
