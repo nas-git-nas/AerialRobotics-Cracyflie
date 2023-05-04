@@ -14,7 +14,7 @@ def exit_handler():
 
 
 # Set 'True' to enable random positions of obstacles and the drone
-enable_random_environment = False
+enable_random_environment = True
 # Set seed to replicate the random environment
 # random.seed(3000)
 

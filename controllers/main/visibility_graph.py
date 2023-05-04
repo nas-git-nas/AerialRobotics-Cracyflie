@@ -28,8 +28,15 @@ class VisibilityGraph():
         else:
             self.vis.clearPointInPolygon()        
 
-    def buildGraph(self, polygons, start, goal):
-        polygons = copy.deepcopy(polygons)           
+    def buildGraph(self, polygons, start, goal, boarder):
+        polygons = copy.deepcopy(polygons)  
+
+        # verify if start is inside a polygon
+        start_in_poly_idx = self.vis.insidePolygon(polygons=polygons, point=start)
+        goal_in_poly_idx = self.vis.insidePolygon(polygons=polygons, point=goal)
+
+        # add boarder to polygons
+        polygons.append(boarder)     
 
         # add start and goal point to polygons
         polygons = [[start]] + polygons + [[goal]]
@@ -48,34 +55,64 @@ class VisibilityGraph():
         # set diagonal to 0
         np.fill_diagonal(graph, 0)
         np.fill_diagonal(checked, True)
-                  
-        # loop through all polygons and points
-        for i0, poly0 in enumerate(polygons):
-            for j0, p0 in enumerate(poly0):
-                # loop through all polygons and points
-                for i1, poly1 in enumerate(polygons):
-                    for j1, p1 in enumerate(poly1):
-                        # determine point index for graph array
-                        idx0 = poly_idx[i0]+j0
-                        idx1 = poly_idx[i1]+j1
 
-                        # continue if graph entry was already determined
-                        if checked[idx0, idx1]:
-                            continue
+        # if start is inside a polygon, consider only this polygon
+        if start_in_poly_idx:
+            # calculate distances from start to all points in polygon
+            polygon = np.array(polygons[start_in_poly_idx], dtype=np.uint32)
+            xy_min = np.min(polygon, axis=0).astype(np.uint32)
+            xy_max = np.max(polygon, axis=0).astype(np.uint32)
+            idxs = [np.where((polygon[:,0] == xy_min[0]) & (polygon[:,1] == xy_min[1]))[0][0], # lower left
+                    np.where((polygon[:,0] == xy_max[0]) & (polygon[:,1] == xy_min[1]))[0][0], # lower right
+                    np.where((polygon[:,0] == xy_max[0]) & (polygon[:,1] == xy_max[1]))[0][0], # upper right
+                    np.where((polygon[:,0] == xy_min[0]) & (polygon[:,1] == xy_max[1]))[0][0]] # upper left
+            dx = start[0] - xy_min[0]
+            dy = start[1] - xy_min[1]
+            dx_max = xy_max[0] - xy_min[0]
+            dy_max = xy_max[1] - xy_min[1]
 
-                        # calculate distance if p0 is visible to p1
-                        if self._isVisible(i0, i1, j0, j1, p0, p1, polygons):                           
-                            graph[idx0, idx1] = self._calcDistance(p0, p1)
+            # determine if point 0 (lower left) or point 2 (upper right) is visible
+            if dy <= dy_max - (dy_max/dx_max)*dx:
+                graph[0, start_in_poly_idx+idxs[0]] = self._calcDistance(start, polygons[start_in_poly_idx][idxs[0]])
+            else:
+                graph[0, start_in_poly_idx+idxs[2]] = self._calcDistance(start, polygons[start_in_poly_idx][idxs[2]])
 
-                        # indicate that graph entry and inverse were determined
-                        checked[idx0, idx1] = True
-                        checked[idx1, idx0] = True
+            # determine if point 1 (lower right) or point 3 (upper left) is visible
+            if dy <= (dy_max/dx_max)*dx:
+                graph[0, start_in_poly_idx+idxs[1]] = self._calcDistance(start, polygons[start_in_poly_idx][idxs[1]])
+            else:
+                graph[0, start_in_poly_idx+idxs[3]] = self._calcDistance(start, polygons[start_in_poly_idx][idxs[3]])
+
+        else:          
+            # loop through all polygons and points
+            for i0, poly0 in enumerate(polygons):
+                for j0, p0 in enumerate(poly0):
+                    # loop through all polygons and points
+                    for i1, poly1 in enumerate(polygons):
+                        for j1, p1 in enumerate(poly1):
+                            # determine point index for graph array
+                            idx0 = poly_idx[i0]+j0
+                            idx1 = poly_idx[i1]+j1
+
+                            # continue if graph entry was already determined
+                            if checked[idx0, idx1]:
+                                continue
+
+                            # calculate distance if p0 is visible to p1
+                            if self._isVisible(i0, i1, j0, j1, p0, p1, polygons):                           
+                                graph[idx0, idx1] = self._calcDistance(p0, p1)
+
+                            # indicate that graph entry and inverse were determined
+                            checked[idx0, idx1] = True
+                            checked[idx1, idx0] = True
 
         # print(f"graph: {graph[0]}")
 
         self._graph = graph
         self._polygons = polygons
         self._poly_idx = poly_idx
+
+        return start_in_poly_idx, goal_in_poly_idx
 
     def findShortestPath(self):
         path = self.dijkstra.findShortestPath(self._graph)

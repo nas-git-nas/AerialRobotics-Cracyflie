@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import time
 import copy    
+from scipy.ndimage import binary_dilation, label
 
 from visibility_graph import VisibilityGraph
 from visibility import Visibility
@@ -18,13 +19,15 @@ class OccupancyMap():
         self._range_max = 2 # maximum range of the sensor in meters
         self._res = 0.01 # resolution of the map in meters 
         self._threshold = 0.5 # threshold for occupied space
-        object_extention = 0.15 # extention of the objects in meters
+        object_extention = 0.12 # extention of the objects in meters
         self._kernel_size = int(round(2*object_extention / self._res, 0)) # size of the kernel for morphological operations (must be odd)
         self._contour_approx = 0.02 # approximation of the contours
         self._size_x = (0, 5) # map x limits in meters
         self._size_y = (0, 3) # map y limits in meters
         self._boarder_size = int(round(0.1/self._res, 0)) # size of the boarder in pixels
         self._polygon_filter_dist = 0.8/self._res # filter polygons with a distance smaller than this value
+        self._point_reached_dist = 0.04 # in meters, distance to a point to be considered as reached
+        self._explore_range = 0.1, # in meters
 
         # initialize map and boarder
         self._map = - np.ones((self._pos2idx(self._size_x[1], dim="x"), 
@@ -40,7 +43,7 @@ class OccupancyMap():
 
         self._polygons = [[]]
         self._path = []
-        self._in_polygon_idx = None          
+        self._start_in_polygon = None          
 
         if visualization:
             import multiprocessing
@@ -97,6 +100,9 @@ class OccupancyMap():
         polygons = copy.deepcopy(self._polygons)
         path = copy.copy(self._path)
 
+        # add boarder to polygons
+        polygons.append(self._boarder) 
+
         # create image and copy map
         map_img = np.ones(self.img.shape, dtype=np.uint8) * 255
         map_array = np.transpose(self._map).copy()
@@ -116,7 +122,7 @@ class OccupancyMap():
                     rr, cc = skimage.draw.line(poly[i][0], poly[i][1], poly[i+1][0], poly[i+1][1])
                 rr = np.clip(rr, 0, self._map.shape[0]-1)
                 cc = np.clip(cc, 0, self._map.shape[1]-1)
-                if self._in_polygon_idx == idx: # orange
+                if self._start_in_polygon == idx: # orange
                     map_img[cc, rr, 0] = 255
                     map_img[cc, rr, 1] = 165
                     map_img[cc, rr, 2] = 0
@@ -126,9 +132,9 @@ class OccupancyMap():
                     map_img[cc, rr, 2] = 0
 
         # draw polygon center in orange if current position is inside polygon
-        if self._in_polygon_idx is not None:  
-            x_mean = np.mean([p[0] for p in polygons[self._in_polygon_idx]], dtype=np.uint32)
-            y_mean = np.mean([p[1] for p in polygons[self._in_polygon_idx]], dtype=np.uint32)
+        if self._start_in_polygon is not None:  
+            x_mean = np.mean([p[0] for p in polygons[self._start_in_polygon]], dtype=np.uint32)
+            y_mean = np.mean([p[1] for p in polygons[self._start_in_polygon]], dtype=np.uint32)
             rr, cc = skimage.draw.ellipse(x_mean, y_mean, r_radius=4, c_radius=4, shape=self._map.shape)
             map_img[cc, rr, 0] = 255
             map_img[cc, rr, 1] = 165
@@ -216,7 +222,7 @@ class OccupancyMap():
             raise ValueError('The map is not in the correct range!')
         
         # save the map
-        self._map[:] = map_array[:]
+        self._map[:] = map_array[:]  
         
     def findPath(self, sensor_data, goal):
         # time_s = time.time()
@@ -225,70 +231,30 @@ class OccupancyMap():
         start = (self._pos2idx(sensor_data['x_global'], "x"), self._pos2idx(sensor_data['y_global'], "y"))
         goal = (self._pos2idx(goal[0], "x"), self._pos2idx(goal[1], "y"))
 
-        # copy the map and transpose it (because cv2 takes y-axis in 1. and x-axes in 2. dimension)
-        map_array = self._map.copy().astype(np.float32).transpose()
-
-        # Threshold the map
-        _, thresholded_map = cv2.threshold(map_array, self._threshold, 1, cv2.THRESH_BINARY)
-
-        # Dilate the obstacles on the map
-        dilated_map =   cv2.dilate(
-                            src = thresholded_map, 
-                            kernel = np.ones((self._kernel_size, self._kernel_size), np.uint8), 
-                            iterations = 1
-                        )
-        
-        # check if goal is in obstacle
-        goal_in_polygon = False
-        if dilated_map[goal[1], goal[0]] == 1:
-            goal_in_polygon = True
-
-        # Extract the contours of the obstacles from the map using opencv
-        contours, _ = cv2.findContours(dilated_map.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Extract the polygons from the contours using opencv
-        polygons = []
-        for contour in contours:
-            # Approximate the contour with a polygon
-            polygon = cv2.approxPolyDP(contour, self._contour_approx * cv2.arcLength(contour, True), True)
-            # Convert the polygon to a list of points
-            polygon_points = [tuple(point[0]) for point in polygon]
-            # Add the polygon to the list of polygons
-            polygons.append(polygon_points)     
+        polygons, dilated_map = self._findPolygons()      
 
         # print(f"Time to find polygons: {time.time()-time_s:.3f}")
         # time_s = time.time()
 
         # filter polygons for better performance
-        polygons = self._filterPolygons(polygons=polygons, start=start, goal=goal)   
+        polygons = self._filterPolygons(polygons=polygons, start=start, goal=goal)
 
-        # add boarder to polygons
-        polygons.append(self._boarder)
+        # Create visibility graph and calculate shortest path
+        self._start_in_polygon, goal_in_polygon = self.vg.buildGraph(polygons=polygons, start=start, goal=goal, boarder=self._boarder)
+        path = self.vg.findShortestPath()
         
-        # check if start is in any polygon (except the boarder)
-        if dilated_map[start[1], start[0]] == 1:
-            # move out of polygon
-            path = self._moveOutPolygon(polygons, start)
-        else:
-            # Create visibility graph and calculate shortest path
-            self.vg.buildGraph(polygons=polygons, start=start, goal=goal)
-            path = self.vg.findShortestPath()
+        
+        # # check if start is in any polygon (except the boarder)
+        # if dilated_map[start[1], start[0]] == 1:
+        #     # move out of polygon
+        #     path = self._moveOutPolygon(polygons, start)
+        # else:
+        #     # Create visibility graph and calculate shortest path
+        #     goal_in_polygon = self.vg.buildGraph(polygons=polygons, start=start, goal=goal, boarder=self._boarder)
+        #     path = self.vg.findShortestPath()
 
-            # reset inside polygon index for drawing
-            self._in_polygon_idx = None
-
-        # print(f"Time to find path: {time.time()-time_s:.3f}")
-
-        # # convert polygons to pyvisgraph points
-        # vg_polygons = []
-        # for poly in polygons:
-        #     vg_polygons.append([vg.Point(p[0], p[1]) for p in poly])
-
-        # # Get shortest path between two points
-        # graph = vg.VisGraph()
-        # graph.build(vg_polygons)
-        # vg_path = graph.shortest_path(vg.Point(start[0], start[1]), vg.Point(goal[0], goal[1]))
-        # path = [(int(round(p.x, 0)), int(round(p.y, 0))) for p in vg_path]
+        #     # reset inside polygon index for drawing
+        #     self._start_in_polygon = None
 
         # calc desired theta (angle of moevement)
         desired_theta = self._calcDesiredTheta(sensor_data=sensor_data, path=path)
@@ -298,6 +264,78 @@ class OccupancyMap():
         self._path = path
         
         return desired_theta, goal_in_polygon
+    
+    # def shouldExplore(self, sensor_data, real_theta):
+    #     # get indices of direction of movement
+    #     x = np.arange(sensor_data['x_global'], sensor_data['x_global']+np.cos(real_theta)*self._explore_range, 
+    #                   self._pos2idx(self._explore_range, dim="x"))
+    #     y = np.arange(sensor_data['y_global'], sensor_data['y_global']+np.sin(real_theta)*self._explore_range, 
+    #                   self._pos2idx(self._explore_range, dim="y"))
+    #     idx_x = self._pos2idx(x, dim='x')
+    #     idx_y = self._pos2idx(y, dim='y')
+
+    #     # check occupancy values in direction of movement (only up to fisrt obstacle)
+    #     trajectory = self._map[idx_x, idx_y].flatten()
+    #     first_obstacle_idx = np.where(trajectory>self._threshold)[0][0]
+
+    #     print(f"should explore: trajectory: {trajectory}, first_obstacle_idx: {first_obstacle_idx}")
+
+    #     if (trajectory[:first_obstacle_idx] == -1).any():
+    #         return True
+        
+    #     return False
+    
+    def _findPolygons(self):
+        # copy the map and transpose it (because cv2 takes y-axis in 1. and x-axes in 2. dimension)
+        map_array = self._map.copy().astype(np.float32).transpose()
+
+        # Threshold the map
+        thresholded_map = (map_array > self._threshold).astype(np.uint8)
+
+        # Dilate the obstacles on the map
+        structure = np.ones((self._kernel_size, self._kernel_size))
+        dilated_map = binary_dilation(thresholded_map, structure=structure).astype(np.uint8)
+
+        # Label the objects in the map
+        labeled_map, num_objects = label(dilated_map)
+
+        # Extract the polygons from the labeled objects
+        polygons = []
+        for i in range(1, num_objects+1):
+            # Find the indices of the object in the map
+            x_idx = np.where(np.any(labeled_map==i, axis=0))
+            y_idx = np.where(np.any(labeled_map==i, axis=1))
+
+            # define polygon as rectangle around object
+            polygons.append([(np.min(x_idx), np.min(y_idx)), 
+                             (np.max(x_idx), np.min(y_idx)), 
+                             (np.max(x_idx), np.max(y_idx)), 
+                             (np.min(x_idx), np.max(y_idx))])
+
+        # # Threshold the map
+        # _, thresholded_map = cv2.threshold(map_array, self._threshold, 1, cv2.THRESH_BINARY)
+
+        # # Dilate the obstacles on the map
+        # dilated_map =   cv2.dilate(
+        #                     src = thresholded_map, 
+        #                     kernel = np.ones((self._kernel_size, self._kernel_size), np.uint8), 
+        #                     iterations = 1
+        #                 )
+        
+        # # Extract the contours of the obstacles from the map using opencv
+        # contours, _ = cv2.findContours(dilated_map.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # # Extract the polygons from the contours using opencv
+        # polygons = []
+        # for contour in contours:
+        #     # Approximate the contour with a polygon
+        #     polygon = cv2.approxPolyDP(contour, self._contour_approx * cv2.arcLength(contour, True), True)
+        #     # Convert the polygon to a list of points
+        #     polygon_points = [tuple(point[0]) for point in polygon]
+        #     # Add the polygon to the list of polygons
+        #     polygons.append(polygon_points)
+
+        return polygons, dilated_map
     
     def _moveOutPolygon(self, polygons, start):
         # find polygon that contains start
@@ -312,7 +350,7 @@ class OccupancyMap():
         path = [start, goal]
 
         # set inside polygon index for drawing
-        self._in_polygon_idx = idx
+        self._start_in_polygon = idx
         return path
     
     def _filterPolygons(self, polygons, start, goal):
@@ -351,10 +389,14 @@ class OccupancyMap():
         if len(path) <= 1:
             return None
         
-        # determine direction of movement
-        next_pos = (self._idx2pos(path[1][0], "x"), self._idx2pos(path[1][1], "y"))
-        desired_theta = np.arctan2(next_pos[1]-sensor_data["y_global"], next_pos[0]-sensor_data["x_global"])
-
+        # determine next point
+        for p in path:
+            next_point = (self._idx2pos(p[0], "x"), self._idx2pos(p[1], "y"))
+            if self._dist2point(sensor_data, next_point) > self._point_reached_dist:
+                break
+        
+        # return direction of movement
+        desired_theta = np.arctan2(next_point[1]-sensor_data["y_global"], next_point[0]-sensor_data["x_global"])
         return desired_theta
     
     def _pos2idx(self, pos, dim):
@@ -384,6 +426,11 @@ class OccupancyMap():
             raise ValueError('Dimension not defined!')
         
         return pos
+    
+    def _dist2point(self, sensor_data, point):
+        v_x = point[0] - sensor_data['x_global']
+        v_y = point[1] - sensor_data['y_global']
+        return np.sqrt(v_x**2 + v_y**2)
 
 
 def test_map():
