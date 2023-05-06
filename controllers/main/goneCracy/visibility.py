@@ -50,51 +50,15 @@ class Visibility():
         return not np.any(do_intersect)
     
     def insidePolygon(self, polygons, point):
-        # create array that contains all possible line segment that could intersect with p0-q0
-        q0 = np.empty((0,2), dtype=np.int32)
-        q1 = np.empty((0,2), dtype=np.int32)
-        nb_points = 0
-        poly_idx = []
-        for poly in polygons:
-            q0 = np.concatenate((q0, np.array(poly, dtype=np.int32)), axis=0)
-            q1 = np.concatenate((q1, np.roll(np.array(poly, dtype=np.int32), -1, axis=0)), axis=0)
-            poly_idx.append(nb_points)
-            nb_points += len(poly)
-
-        # create line segment from point to the right (negative y direction)
-        p0 = np.tile(point, (q0.shape[0],1))
-        p1 = np.tile((point[0],0), (q0.shape[0],1))
-
-        # determine if point is on polygon outline
-        onSegment = self._onSegment(q0, p0, q1)
-        # print(f"onSegment: {onSegment}, disc. {poly_idx < np.argmax(onSegment)}, idx: {np.argmax(onSegment)}, poly_idx: {poly_idx}")
-        if np.any(onSegment):
-            # return index of polygon on which the point is on
-            idx = np.argmax(onSegment) # point index of first True value
+        # verify if point is inside a polygon
+        for idx, poly in enumerate(polygons):
+            xy_min = np.min(poly, axis=0)
+            xy_max = np.max(poly, axis=0)
+            if xy_min[0] <= point[0] and point[0] <= xy_max[0] \
+                and xy_min[1] <= point[1] and point[1] <= xy_max[1]:
+                return idx # polygon index in which the point is inside
             
-            # convert point index to polygon index
-            for j in range(len(poly_idx)-1):
-                if poly_idx[j] <= idx and idx < poly_idx[j+1]:
-                    return j 
-            return len(poly_idx)-1
-
-        # determine if point is inside polygon
-        do_intersect = self._doIntersect(p0, p1, q0, q1)
-        # print(f"do_intersect: {do_intersect}")
-        for idx in range(len(poly_idx)):
-            # determine range of polygon indices
-            if idx == len(poly_idx)-1:
-                idx_range = (poly_idx[idx], len(do_intersect))
-            else:
-                idx_range = (poly_idx[idx], poly_idx[idx+1])
-            
-            # count number of intersections with polygon
-            nb_intersections = np.sum(do_intersect[idx_range[0]:idx_range[1]])
-            # print(f"idx: {idx}, nb_intersections: {nb_intersections}, range: {idx_range}")
-            if nb_intersections % 2 == 1:
-                return idx # polygon index
-            
-        return False # point is outside all polygons
+        return None # point is outside all polygons
     
     def _doIntersect(self, p0, p1, q0, q1):
         # logical array indicating if the line segments intersect
@@ -172,3 +136,53 @@ if __name__ == "__main__":
     # test_doIntersect()
     test_isVisible()
     # test_insidePolygon()
+
+
+
+
+    # def insidePolygon(self, polygons, point):
+    #     # create array that contains all possible line segment that could intersect with p0-q0
+    #     q0 = np.empty((0,2), dtype=np.int32)
+    #     q1 = np.empty((0,2), dtype=np.int32)
+    #     nb_points = 0
+    #     poly_idx = []
+    #     for poly in polygons:
+    #         q0 = np.concatenate((q0, np.array(poly, dtype=np.int32)), axis=0)
+    #         q1 = np.concatenate((q1, np.roll(np.array(poly, dtype=np.int32), -1, axis=0)), axis=0)
+    #         poly_idx.append(nb_points)
+    #         nb_points += len(poly)
+
+    #     # create line segment from point to the right (negative y direction)
+    #     p0 = np.tile(point, (q0.shape[0],1))
+    #     p1 = np.tile((point[0],0), (q0.shape[0],1))
+
+    #     # determine if point is on polygon outline
+    #     onSegment = self._onSegment(q0, p0, q1)
+    #     # print(f"onSegment: {onSegment}, disc. {poly_idx < np.argmax(onSegment)}, idx: {np.argmax(onSegment)}, poly_idx: {poly_idx}")
+    #     if np.any(onSegment):
+    #         # return index of polygon on which the point is on
+    #         idx = np.argmax(onSegment) # point index of first True value
+            
+    #         # convert point index to polygon index
+    #         for j in range(len(poly_idx)-1):
+    #             if poly_idx[j] <= idx and idx < poly_idx[j+1]:
+    #                 return j 
+    #         return len(poly_idx)-1
+
+    #     # determine if point is inside polygon
+    #     do_intersect = self._doIntersect(p0, p1, q0, q1)
+    #     # print(f"do_intersect: {do_intersect}")
+    #     for idx in range(len(poly_idx)):
+    #         # determine range of polygon indices
+    #         if idx == len(poly_idx)-1:
+    #             idx_range = (poly_idx[idx], len(do_intersect))
+    #         else:
+    #             idx_range = (poly_idx[idx], poly_idx[idx+1])
+            
+    #         # count number of intersections with polygon
+    #         nb_intersections = np.sum(do_intersect[idx_range[0]:idx_range[1]])
+    #         # print(f"idx: {idx}, nb_intersections: {nb_intersections}, range: {idx_range}")
+    #         if nb_intersections % 2 == 1:
+    #             return idx # polygon index
+            
+    #     return False # point is outside all polygons

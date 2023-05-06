@@ -44,19 +44,16 @@ class MyController():
         """
         self._first_part = True 
 
-        landing_region_points = [(3.70, 0.20), (4.80, 0.20), (4.80, 0.50), (3.70, 0.50),
-                                    (3.70, 0.80), (4.80, 0.80), (4.80, 1.10), (3.70, 1.10),
-                                    (3.70, 1.40), (4.80, 1.40), (4.80, 1.70), (3.70, 1.70),
-                                    (3.70, 2.00), (4.80, 2.00), (4.80, 2.30), (3.70, 2.30)]
-        # landing_region_points = [ (2.50, 1.0), (1.50, 1.00), (2.5, 1.0), (1.5, 1.0)]
-        starting_region_points = [(1.30, 0.20), (0.20, 0.20), (0.20, 0.50), (1.30, 0.50),
-                                    (1.30, 0.80), (0.20, 0.80), (0.20, 1.10), (1.30, 1.10),
-                                    (1.30, 1.40), (0.20, 1.40), (0.20, 1.70), (1.30, 1.70),
-                                    (1.30, 2.00), (0.20, 2.00), (0.20, 2.30), (1.30, 2.30)]
-        self._points = landing_region_points + starting_region_points
+        self._points = [(3.70, 1.40), (3.70, 1.00), (3.70, 0.60), (3.70, 0.20),
+                        (4.25, 0.20), (4.80, 0.20), (4.80, 0.50), (4.40, 0.50), (4.00, 0.50),
+                        (4.00, 0.80), (4.40, 0.80), (4.80, 0.80), (4.80, 1.10), (4.40, 1.10), (4.00, 1.10),
+                        (4.00, 1.40), (4.40, 1.40), (4.80, 1.40), (4.80, 1.70), (4.40, 1.70), (4.00, 1.70), (3.70, 1.70),
+                        (3.70, 2.00), (4.00, 2.00), (4.40, 2.00), (4.80, 2.00), (4.80, 2.30), (4.40, 2.30), (4.00, 2.30), (3.70, 2.30), 
+                        (3.70, 2.60), (4.00, 2.60), (4.40, 2.60), (4.80, 2.60), (4.80, 2.80), (4.40, 2.80), (4.00, 2.80), (3.70, 2.80)]
         self._points_idx = 0
         self._landing_region_idx = 0
-        self._starting_region_idx = len(landing_region_points)
+        self._starting_region_idx = 0
+        self._init_points_bool = True
 
         self._reset_counter = 0
 
@@ -64,9 +61,15 @@ class MyController():
         self.map = OccupancyMap(visualization=self.visualization)
 
         self._real_theta = 0.0
-        self._gamma_theta = 0.03
-        self._max_speed = 0.2
+        self._gamma_theta = 0.1
+        self._max_speed = 0.25
         self._min_speed = 0.01
+
+        self._explore_counter = 0
+        self._explore_counter_max = 300
+        self._explore_yaw_max = np.pi/2
+        self._explore_direction = True
+        self._explore_speed = 1.0
 
     # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
@@ -80,8 +83,12 @@ class MyController():
         elif self._state == "search":
             desired_theta, goal_in_polygon = self.map.findPath(sensor_data=sensor_data, goal=self._points[self._points_idx])          
             real_command, desired_command = self._search(sensor_data, desired_theta)
-            if goal_in_polygon:
+            if goal_in_polygon is not None:
                 self._incPointIndex()
+                print(f"Goal in polygon: {goal_in_polygon}")
+        elif self._state == "explore":
+            real_command = self._explore(sensor_data)
+            desired_command = real_command 
         elif self._state == "land":
             real_command = self._land(sensor_data)
             desired_command = real_command  
@@ -99,24 +106,18 @@ class MyController():
             self.map.drawMap(sensor_data=sensor_data, real_command=real_command, desired_command=desired_command)
         # print(f"Time for draw map: {time.time()-time_start:.3f} s")
         
-        return real_command
+        return self._gloabal2local(sensor_data=sensor_data, command=real_command)
         
 
     def _takeoff(self, sensor_data):
-        # remember position of starting area
-        if self._first_part:
-            self._points = self._points[:self._starting_region_idx] \
-                            + [(sensor_data['x_global'], sensor_data['y_global'])] \
-                            + self._points[self._starting_region_idx:]
-
         if sensor_data['range_down'] < self._height_desired-0.01:
             self._height_current += 0.005
             command = [0.0, 0.0, 0.0, self._height_current]
         else:
             command = [0.0, 0.0, 0.0, self._height_desired]
             self._state = "search"
-            if self._verb:
-                print("_takeoff: takeoff -> move")
+            if self._verb: print("_takeoff: takeoff -> move")
+            self._init_points(sensor_data=sensor_data)
         
         return command
     
@@ -135,12 +136,37 @@ class MyController():
         # check increase point index if next set point is reached
         self._checkPoint(sensor_data=sensor_data, dist=0.05)
 
-        real_vel = self._theta2vel(desired_theta)
+        # # check if drone should explore
+        # if self.map.shouldExplore:
+        #     self._state = "explore"
+        #     if self._verb: print("_search: search -> explore")
 
-        real_command = [real_vel[0], real_vel[1], 0, self._height_desired]
-        desired_command = [np.cos(desired_theta)*self._max_speed, np.sin(desired_theta)*self._max_speed, self._height_desired]
+        # self._explore_counter += 1
+        # if self._explore_counter > self._explore_counter_max:
+        #     self._state = "explore"
+        #     if self._verb: print("_search: search -> explore")
+        #     self._explore_counter = 0
 
+        real_command, desired_command = self._theta2command(desired_theta)
         return real_command, desired_command
+    
+    def _explore(self, sensor_data):
+        if self._explore_direction:
+            if sensor_data["yaw"] < self._explore_yaw_max:
+                return [0.0, 0.0, self._explore_speed, self._height_desired]
+            else:
+                self._explore_direction = False
+                return [0.0, 0.0, -self._explore_speed, self._height_desired]
+        else:
+            if sensor_data["yaw"] > 0.0:
+                return [0.0, 0.0, -self._explore_speed, self._height_desired]
+            else:
+                self._explore_direction = True
+                self._state = "search"
+                if self._verb: print("_explore: explore -> search")
+                return [0.0, 0.0, 0, self._height_desired]
+
+
     
     def _land(self, sensor_data):
         if sensor_data['range_down'] > 0.02:
@@ -149,6 +175,7 @@ class MyController():
         else:
             control_command = [0.0, 0.0, 0.0, 0.0]
             self._state = "reset"
+            
 
             if self._verb:
                 print("_land: land -> reset")
@@ -171,7 +198,11 @@ class MyController():
 
         return command
     
-    def _theta2vel(self, desired_theta):
+    def _theta2command(self, desired_theta):
+        # if desired theta is None (no path was found), use last theta
+        if desired_theta is None:
+            desired_theta = self._real_theta
+
         # shift desired theta s.t. it is close (|error| <= pi) to real theta
         theta_error = desired_theta - self._real_theta
         if theta_error > np.pi:
@@ -192,8 +223,39 @@ class MyController():
         elif self._real_theta <= -np.pi:
             self._real_theta += 2*np.pi
 
-        # return velocity in x and y directions
-        return real_speed*np.cos(self._real_theta), real_speed*np.sin(self._real_theta)
+        # return real and desired commands
+        real_command = [real_speed*np.cos(self._real_theta), real_speed*np.sin(self._real_theta), self._explore_speed, self._height_desired]
+        desired_command = [np.cos(desired_theta)*self._max_speed, np.sin(desired_theta)*self._max_speed, self._explore_speed, self._height_desired]     
+        return real_command, desired_command
+    
+    def _init_points(self, sensor_data):
+        # remember position of starting area
+        if self._init_points_bool:
+            x = sensor_data['x_global']
+            y = sensor_data['y_global']
+            self._points.append((x, y))
+            self._starting_region_idx = len(self._points)-1
+            self._points = self._points + [(x, y+0.1), (x+0.1, y+0.1), (x+0.1, y-0.1), (x-0.1, y-0.1), 
+                                           (x-0.1, y+0.2), (x+0.2, y+0.2), (x+0.2, y-0.2), (x-0.2, y-0.2),
+                                           (x-0.2, y+0.3), (x+0.3, y+0.3), (x+0.3, y-0.3), (x-0.3, y-0.3),
+                                           (x-0.3, y+0.4), (x+0.4, y+0.4), (x+0.4, y-0.4), (x-0.4, y-0.4),
+                                           (x-0.4, y+0.5), (x+0.5, y+0.5), (x+0.5, y-0.5), (x-0.5, y-0.5),
+                                           (x-0.5, y+0.6), (x+0.6, y+0.6), (x+0.6, y-0.6), (x-0.6, y-0.6),
+                                           (x-0.6, y+0.7), (x+0.7, y+0.7), (x+0.7, y-0.7), (x-0.7, y-0.7),
+                                           (x-0.7, y+0.8), (x+0.8, y+0.8), (x+0.8, y-0.8), (x-0.8, y-0.8),
+                                           (x-0.8, y+0.9), (x+0.9, y+0.9), (x+0.9, y-0.9), (x-0.9, y-0.9),
+                                           (x-0.9, y+1.0), (x+1.0, y+1.0), (x+1.0, y-1.0), (x-1.0, y-1.0),
+                                           (x-1.0, y+1.1), (x+1.1, y+1.1), (x+1.1, y-1.1), (x-1.1, y-1.1),
+                                           (x-1.1, y+1.2), (x+1.2, y+1.2), (x+1.2, y-1.2), (x-1.2, y-1.2),
+                                           (x-1.2, y+1.3), (x+1.3, y+1.3), (x+1.3, y-1.3), (x-1.3, y-1.3),
+                                           (x-1.3, y+1.4), (x+1.4, y+1.4), (x+1.4, y-1.4), (x-1.4, y-1.4),
+                                           (x-1.4, y+1.5), (x+1.5, y+1.5), (x+1.5, y-1.5), (x-1.5, y-1.5)]
+            self._init_points_bool = False
+    
+    def _gloabal2local(self, sensor_data, command):
+        vx = command[0]*np.cos(sensor_data['yaw']) + command[1]*np.sin(sensor_data['yaw'])
+        vy = -command[0]*np.sin(sensor_data['yaw']) + command[1]*np.cos(sensor_data['yaw'])
+        return [vx, vy, command[2], command[3]]
     
     def _move2point(self, sensor_data, point):
         v_x = point[0] - sensor_data['x_global']

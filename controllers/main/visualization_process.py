@@ -1,11 +1,10 @@
 import numpy as np
-
 import matplotlib.pyplot as plt
 import multiprocessing
 from multiprocessing import shared_memory
 
 
-class ShowMap(multiprocessing.Process):
+class VisualizationProcess(multiprocessing.Process):
     def __init__(self, event, img_init, labels):
         multiprocessing.Process.__init__(self)
 
@@ -15,9 +14,6 @@ class ShowMap(multiprocessing.Process):
         # initial map
         self._img_init = img_init
         self._labels = labels
-
-    def __del__(self): # TODO
-        print("destructuring2222222")
 
     def run(self):
         # get shared memory
