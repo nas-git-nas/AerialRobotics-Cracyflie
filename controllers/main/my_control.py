@@ -7,7 +7,6 @@
 # data['range_right'], data['range_down'], data['yaw_rate'].
 
 import numpy as np
-import copy
 import time
 
 from navigation import Navigation
@@ -46,24 +45,18 @@ class MyController():
             True: drone goes from starting area to landing platform
             False: drone goes from landing area to starting platform
         """
-        self._first_part = True 
+        self._first_part = True
+
         self._search_points = [(3.9,1.5)] # list of points to visit
         self._search_points_idx = 0 # index of the current point
         self._init_position = None # initial position of the drone when taking off
 
-        self._real_theta = 0.0 # real theta of the drone
-        self._real_speed = 0.0 # real speed of the drone
-        self._real_height = 0.0
+        self._applied_yaw = 0.0 # applied yaw of the drone
+        self._applied_speed = 0.0 # applied speed of the drone
+        self._applied_height = 0.0 # applied height of the drone
 
-        self._platform_points = [] # list of points of the platform
-        self._scan_points = [] # list of points of the scan
-        self._scan_points_idx = 0 # index of the current scan point
-        self._desired_height = self.params.mc_height_search
-
-        self._land_pos =(0.0, 0.0)
-        self._land_vel = (0.0, 0.0)
-        self._land_count = 0
-        self._yaw_approx = 0.0
+        self._land_pos =(0.0, 0.0) # position where landing platform was detected
+        self._land_vel = (0.0, 0.0) # velocity of the drone when landing platform was detected
 
 
     # Don't change the method name of 'step_control'
@@ -103,11 +96,11 @@ class MyController():
         
 
     def _takeoff(self, sensor_data):
-        if sensor_data['range_down'] < self._desired_height-0.01:
-            self._real_height += 0.01 * (self._desired_height-sensor_data['range_down'])/self._desired_height
-            command = [0.0, 0.0, 0.0, self._real_height]
+        if sensor_data['range_down'] < self.params.mc_height_search-0.01:
+            self._applied_height += np.maximum(0.01 * (self.params.mc_height_search-sensor_data['range_down'])/self.params.mc_height_search, 0.002)
+            command = [0.0, 0.0, 0.0, self._applied_height]
         else:
-            command = [0.0, 0.0, 0.0, self._desired_height]
+            command = [0.0, 0.0, 0.0, self._applied_height]
             self._state = "search"
             if self.params.verb: print("_takeoff: takeoff -> search")
 
@@ -126,30 +119,18 @@ class MyController():
             self._state = "land"
             if self.params.verb: print("_search: search -> land")
 
-            # calculate landing velocity
-            # theta = np.arctan2(sensor_data["y_global"]-self._last_pos[1], sensor_data["x_global"]-self.last_pos[0])
-            theta = self._real_theta #self._yaw_approx #sensor_data['yaw'] #
-            self._land_vel = (np.cos(theta)*self.params.mc_land_speed, np.sin(theta)*self.params.mc_land_speed)
+            # calculate landing velocity and position where platform was detected
+            self._land_vel = (np.cos(self._applied_yaw)*self.params.mc_land_speed, np.sin(self._applied_yaw)*self.params.mc_land_speed)
             self._land_pos = (sensor_data["x_global"], sensor_data["y_global"])
-            self
 
             # stop moving
-            command = [self._land_vel[0], self._land_vel[1], 0.0, self.params.mc_height_platform]
+            command = [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
             return command, command
-            
-        
-        # remember last position to calculate landing velocity
-        if sensor_data['yaw'] - self._yaw_approx > np.pi:
-            self._yaw_approx += 2*np.pi
-        elif sensor_data['yaw'] - self._yaw_approx < -np.pi:
-            self._yaw_approx -= 2*np.pi
-        self._yaw_approx = sensor_data['yaw']*0.5 + self._yaw_approx*0.5
-        self.last_pos = (sensor_data["x_global"], sensor_data["y_global"])
 
         # find shortest path to next point
         desired_theta, goal_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=self._search_points[self._search_points_idx]) 
         if goal_in_polygon:
-            desired_theta = self._real_theta
+            desired_theta = self._applied_yaw
 
         # check increase point index if next set point is reached
         self._checkPoint(sensor_data=sensor_data, dist=0.05, goal_in_polygon=goal_in_polygon)        
@@ -157,56 +138,23 @@ class MyController():
         # return desired and real command
         return self._theta2command(desired_theta, max_speed=self.params.mc_max_speed)
     
-    # def _scan(self, sensor_data):
-    #     # Update the map
-    #     self.nav.updateMap(sensor_data=sensor_data)
-
-    #     # add point to platform points if drone is over platform
-    #     if self._platformTransition(sensor_data=sensor_data):
-    #         self._platform_points.append((sensor_data["x_global"], sensor_data["y_global"]))
-
-    #     # define goal
-    #     if len(self._platform_points) >= self.params.mc_min_nb_platform_points and self._scan_points_idx%3 == 2:
-    #         # define goal as mean of all platform points
-    #         goal = (np.mean(np.array(self._platform_points)[:,0]), np.mean(np.array(self._platform_points)[:,1]))           
-    #     else:
-    #         goal = self._scan_points[self._scan_points_idx]
-
-    #     # check if goal is reached  
-    #     if self._dist2point(sensor_data=sensor_data, point=goal) < self.params.mc_min_dist_platform_reached:
-    #         # transition to landing if mean platform position is reached or all scan points are checked
-    #         if (len(self._platform_points) >= self.params.mc_min_nb_platform_points and self._scan_points_idx%3 == 2)\
-    #             or (self._scan_points_idx >= len(self._scan_points)):
-    #             self._state = "land"
-    #             if self.params.verb: print("_search: scan -> land")
-    #             command = [0.0, 0.0, 0.0, self._desired_height]
-    #             return command, command
-    #         else:
-    #             # increase scan point index
-    #             self._scan_points_idx += 1
-
-    #     desired_theta, goal_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=goal)
-    #     real_command, desired_command = self._theta2command(desired_theta, max_speed=self.params.mc_land_speed)
-
-    #     return real_command, desired_command
-    
     def _land(self, sensor_data):
-        # # continue moveing in same direction for some time
-        # self._land_count += 1
-        # if self._land_count < self.params.mc_land_count_max:
-        #     return [self._land_vel[0], self._land_vel[1], 0.0, self.params.mc_height_platform]
         
+        # continue moving in same direction for a fixed distance
         if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.mc_land_dist:
-            return [self._land_vel[0], self._land_vel[1], 0.0, self.params.mc_height_platform]
+            # update applied height
+            self._applied_height = (1-self.params.mc_gamma_height)*self._applied_height + self.params.mc_gamma_height*self.params.mc_height_platform
+
+            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         
         # land
         if sensor_data['range_down'] > 0.02:
-            self._real_height -= 0.01 * (sensor_data['range_down'])/self._desired_height
+            self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.mc_height_search, 0.004)
         else:
             self._state = "reset"
             if self.params.verb: print("_land: land -> reset")
         
-        return [0.0, 0.0, 0.0, self._real_height]
+        return [0.0, 0.0, 0.0, self._applied_height]
     
     def _reset(self):
         # return to starting area
@@ -214,47 +162,51 @@ class MyController():
             self._first_part = False
             self._search_points = [self._init_position]
             self._search_points_idx = 0
-            self._land_count = 0
 
             self._state = "takeoff"
             if self.params.verb: print("_reset: reset -> takeoff")
-
-        return [0.0, 0.0, 0.0, self._real_height]
+        
+        # update applied height
+        self._applied_height = (1-self.params.mc_gamma_height)*self._applied_height
+        return [0.0, 0.0, 0.0, self._applied_height]
     
     def _theta2command(self, desired_theta, max_speed):
         # if desired theta is None (no path was found), use last theta
         if desired_theta is None:
-            desired_theta = self._real_theta
-            print(f"_theta2command: desired_theta is None, using last theta: {desired_theta:.3f}")
+            desired_theta = self._applied_yaw
+            if self.params.verb:
+                print(f"_theta2command: desired_theta is None, using last theta: {np.round(np.rad2deg(desired_theta),1)}°")
 
         # shift desired theta s.t. it is close (|error| <= pi) to real theta
-        theta_error = desired_theta - self._real_theta
+        theta_error = desired_theta - self._applied_yaw
         if theta_error > np.pi:
             desired_theta -= 2*np.pi
         elif theta_error <= -np.pi:
             desired_theta += 2*np.pi
         
         # update real theta with desired theta
-        self._real_theta = (1-self.params.mc_gamma_theta)*self._real_theta + self.params.mc_gamma_theta*desired_theta
+        self._applied_yaw = (1-self.params.mc_gamma_theta)*self._applied_yaw + self.params.mc_gamma_theta*desired_theta
 
         # calculate real speed: max if real and desired theta are aligned, min if |error| >= pi/2
-        desired_speed = (1-abs(desired_theta-self._real_theta)/(np.pi/2)) * max_speed
+        desired_speed = (1-abs(desired_theta-self._applied_yaw)/(np.pi/2)) * max_speed
         desired_speed = np.clip(desired_speed, self.params.mc_min_speed, max_speed)
-        self._real_speed = (1-self.params.mc_gamma_speed)*self._real_speed + self.params.mc_gamma_speed*desired_speed
+        self._applied_speed = (1-self.params.mc_gamma_speed)*self._applied_speed + self.params.mc_gamma_speed*desired_speed
         
         # normalize real theta to (-pi, pi]
-        if self._real_theta > np.pi:
-            self._real_theta -= 2*np.pi
-        elif self._real_theta <= -np.pi:
-            self._real_theta += 2*np.pi
+        if self._applied_yaw > np.pi:
+            self._applied_yaw -= 2*np.pi
+        elif self._applied_yaw <= -np.pi:
+            self._applied_yaw += 2*np.pi
+
+        # update applied height
+        self._applied_height = (1-self.params.mc_gamma_height)*self._applied_height + self.params.mc_gamma_height*self.params.mc_height_search
 
         # return real and desired commands
-        real_command = [self._real_speed*np.cos(self._real_theta), self._real_speed*np.sin(self._real_theta), 
-                        self.params.mc_explore_speed, self._desired_height]
+        real_command = [self._applied_speed*np.cos(self._applied_yaw), self._applied_speed*np.sin(self._applied_yaw), 
+                        self.params.mc_yaw_speed, self._applied_height]
         desired_command = [np.cos(desired_theta)*self.params.mc_max_speed, np.sin(desired_theta)*self.params.mc_max_speed, 
-                           self.params.mc_explore_speed, self._desired_height]     
+                           self.params.mc_yaw_speed, self._applied_height]     
         return real_command, desired_command
-
     
     def _platformTransition(self, sensor_data):
         # check if drone is in landing or starting region
@@ -262,60 +214,13 @@ class MyController():
             or (not self._first_part and sensor_data['x_global']>self.params.map_starting_region_x[1])):
             return False
         
-        if self._desired_height-sensor_data['range_down'] > self.params.mc_height_delta:
-            print("detect platform transition")
-            self._desired_height = sensor_data['range_down']
+        if self._applied_height-sensor_data['range_down'] > self.params.mc_height_delta:
+            self._applied_height = sensor_data['range_down']
+            if self.params.verb:
+                print("_platformTransition: transition detected")
             return True
         
         return False
-
-        # if self._over_platform and (sensor_data['range_down']-self._desired_height > self.params.mc_height_delta):
-        #     # detect transition from platform to search area
-        #     self._over_platform = False
-        #     self._desired_height = self.params.mc_height_search
-        #     if self.params.verb: print("_platformTransition: over platform -> search area")
-        # elif not self._over_platform and (self._desired_height-sensor_data['range_down'] > self.params.mc_height_delta):
-        #     # detect transition from search area to platform
-        #     self._over_platform = True
-        #     self._desired_height = self.params.mc_height_platform
-        #     if self.params.verb: print("_platformTransition: search area -> over platform")
-        #     return True
-
-        # return False
-        
-    def _init_scan_points(self, sensor_data):
-        # rotational matrix in direction of movement
-        cos_theta = np.cos(self._real_theta)
-        sin_theta = np.sin(self._real_theta)
-        rot_matrix = np.array([[cos_theta, -sin_theta], [sin_theta, cos_theta]])
-
-        # scanning displacement
-        dx = self.params.mc_scan_dist
-        dy = self.params.mc_scan_dist
-        delta_dist = np.array([ (dx,0), (dx,dy), (0,dy),
-                                (0,-dy), (-dx,-dy), (-dx,0),
-                                (2*dx,0), (2*dx,-2*dy), (0,-2*dy),
-                                (0,2*dy), (-2*dx,2*dy), (-2*dx,0),
-                                (3*dx,0), (3*dx,3*dy), (0,3*dy),
-                                (0,-3*dy), (-3*dx,-3*dy), (-3*dx,0),
-                                (4*dx,0), (4*dx,-4*dy), (0,-4*dy),
-                                (0,4*dy), (-4*dx,4*dy), (-4*dx,0),])
-        delta_dist = np.transpose(np.matmul(rot_matrix, np.transpose(delta_dist)))
-
-        # scanning center point
-        x = sensor_data['x_global']
-        y = sensor_data['y_global']
-        pos = np.tile(np.array([x, y]), (delta_dist.shape[0], 1))
-
-        self._platform_points = []
-        self._scan_points_idx = 0
-        self._scan_points = pos + delta_dist
-        self._scan_points[:,0] = np.clip(self._scan_points[:,0], 
-                                         self.params.map_size_x[0] + 1.2*self.params.map_boarder_size*self.params.map_res, 
-                                         self.params.map_size_x[1] - 1.2*self.params.map_boarder_size*self.params.map_res)
-        self._scan_points[:,1] = np.clip(self._scan_points[:,1], 
-                                         self.params.map_size_y[0] + 1.2*self.params.map_boarder_size*self.params.map_res, 
-                                         self.params.map_size_y[1] - 1.2*self.params.map_boarder_size*self.params.map_res)
     
     def _gloabal2local(self, sensor_data, command):
         vx = command[0]*np.cos(sensor_data['yaw']) + command[1]*np.sin(sensor_data['yaw'])
@@ -349,38 +254,107 @@ class MyController():
     def _incPointIndex(self):
         # increase point index
         self._search_points_idx += 1
+        if self._search_points_idx < len(self._search_points):
+            return
 
-        # add search points if index is out of range
-        if self._search_points_idx >= len(self._search_points):
-            self._search_points_idx = 0
-            self._search_points = []
-            if self._first_part:
-                # count the number of polygons in the lower and upper part of the landing region
-                polygons = self.nav.get('unfiltered_polygons')
-                upper_counter = 0
-                lower_counter = 0
-                for poly in polygons:
-                    poly_mean = np.mean(np.array(poly), axis=0)
+        # reset search points if the counter is out of range
+        self._search_points_idx = 0
 
-                    # ignore polygons outside of the landing region
-                    if poly_mean[0] < self.params.map_landing_region_x[0] / self.params.map_res:
-                        continue
+        if not self._first_part: # second part: return to starting platform
+            self._search_points = [self._init_position]
+        else: # first part: search for landing platform
+            # count the number of polygons in the lower and upper part of the landing region
+            polygons = self.nav.get('unfiltered_polygons')
+            upper_counter = 0
+            lower_counter = 0
+            for poly in polygons:
+                poly_mean = np.mean(np.array(poly), axis=0)
 
-                    if poly_mean[1] > ((self.params.map_size_y[1]-self.params.map_size_y[0])/2) / self.params.map_res:
-                        upper_counter += 1
-                    else:
-                        lower_counter += 1
-                
-                if self.params.verb:
-                    print(f"_incPointIndex: upper_counter: {upper_counter}, lower_counter: {lower_counter}")
+                # ignore polygons outside of the landing region
+                if poly_mean[0] < self.params.map_landing_region_x[0] / self.params.map_res:
+                    continue
 
-                # search first the part with fewer polygons
-                if upper_counter > lower_counter:
-                    self._search_points = self._search_points + self.params.mc_search_points_lower + self.params.mc_search_points_upper
+                if poly_mean[1] > ((self.params.map_size_y[1]-self.params.map_size_y[0])/2) / self.params.map_res:
+                    upper_counter += 1
                 else:
-                    self._search_points = self._search_points + self.params.mc_search_points_upper + self.params.mc_search_points_lower
+                    lower_counter += 1
+            
+            if self.params.verb:
+                print(f"_incPointIndex: upper_counter: {upper_counter}, lower_counter: {lower_counter}")
+
+            # search first the part with fewer polygons
+            if upper_counter > lower_counter:
+                self._search_points = self.params.mc_search_points_lower + self.params.mc_search_points_upper
             else:
-                self._search_points = [self._init_position]
+                self._search_points = self.params.mc_search_points_upper + self.params.mc_search_points_lower
+                
+
+    # def _scan(self, sensor_data):
+    #     # Update the map
+    #     self.nav.updateMap(sensor_data=sensor_data)
+
+    #     # add point to platform points if drone is over platform
+    #     if self._platformTransition(sensor_data=sensor_data):
+    #         self._platform_points.append((sensor_data["x_global"], sensor_data["y_global"]))
+
+    #     # define goal
+    #     if len(self._platform_points) >= self.params.mc_min_nb_platform_points and self._scan_points_idx%3 == 2:
+    #         # define goal as mean of all platform points
+    #         goal = (np.mean(np.array(self._platform_points)[:,0]), np.mean(np.array(self._platform_points)[:,1]))           
+    #     else:
+    #         goal = self._scan_points[self._scan_points_idx]
+
+    #     # check if goal is reached  
+    #     if self._dist2point(sensor_data=sensor_data, point=goal) < self.params.mc_min_dist_platform_reached:
+    #         # transition to landing if mean platform position is reached or all scan points are checked
+    #         if (len(self._platform_points) >= self.params.mc_min_nb_platform_points and self._scan_points_idx%3 == 2)\
+    #             or (self._scan_points_idx >= len(self._scan_points)):
+    #             self._state = "land"
+    #             if self.params.verb: print("_search: scan -> land")
+    #             command = [0.0, 0.0, 0.0, self._desired_height]
+    #             return command, command
+    #         else:
+    #             # increase scan point index
+    #             self._scan_points_idx += 1
+
+    #     desired_theta, goal_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=goal)
+    #     real_command, desired_command = self._theta2command(desired_theta, max_speed=self.params.mc_land_speed)
+
+    #     return real_command, desired_command
+
+    # def _init_scan_points(self, sensor_data):
+    #     # rotational matrix in direction of movement
+    #     cos_theta = np.cos(self._applied_yaw)
+    #     sin_theta = np.sin(self._applied_yaw)
+    #     rot_matrix = np.array([[cos_theta, -sin_theta], [sin_theta, cos_theta]])
+
+    #     # scanning displacement
+    #     dx = self.params.mc_scan_dist
+    #     dy = self.params.mc_scan_dist
+    #     delta_dist = np.array([ (dx,0), (dx,dy), (0,dy),
+    #                             (0,-dy), (-dx,-dy), (-dx,0),
+    #                             (2*dx,0), (2*dx,-2*dy), (0,-2*dy),
+    #                             (0,2*dy), (-2*dx,2*dy), (-2*dx,0),
+    #                             (3*dx,0), (3*dx,3*dy), (0,3*dy),
+    #                             (0,-3*dy), (-3*dx,-3*dy), (-3*dx,0),
+    #                             (4*dx,0), (4*dx,-4*dy), (0,-4*dy),
+    #                             (0,4*dy), (-4*dx,4*dy), (-4*dx,0),])
+    #     delta_dist = np.transpose(np.matmul(rot_matrix, np.transpose(delta_dist)))
+
+    #     # scanning center point
+    #     x = sensor_data['x_global']
+    #     y = sensor_data['y_global']
+    #     pos = np.tile(np.array([x, y]), (delta_dist.shape[0], 1))
+
+    #     self._platform_points = []
+    #     self._scan_points_idx = 0
+    #     self._scan_points = pos + delta_dist
+    #     self._scan_points[:,0] = np.clip(self._scan_points[:,0], 
+    #                                      self.params.map_size_x[0] + 1.2*self.params.map_boarder_size*self.params.map_res, 
+    #                                      self.params.map_size_x[1] - 1.2*self.params.map_boarder_size*self.params.map_res)
+    #     self._scan_points[:,1] = np.clip(self._scan_points[:,1], 
+    #                                      self.params.map_size_y[0] + 1.2*self.params.map_boarder_size*self.params.map_res, 
+    #                                      self.params.map_size_y[1] - 1.2*self.params.map_boarder_size*self.params.map_res)
 
     # def _init_search_points(self, sensor_data):
     #     # add searching points from landing region  
