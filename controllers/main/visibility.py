@@ -56,11 +56,12 @@ class Visibility():
         # General case
         do_intersect[(o1 != o2) & (o3 != o4)] = True
     
-        # Special Cases
-        do_intersect[(o1 == 0) & self._onSegment(p0, q0, p1)] = True # p0 , p1 and q0 are collinear and q0 lies on segment p0p1
-        do_intersect[(o2 == 0) & self._onSegment(p0, q1, p1)] = True # p0 , p1 and q1 are collinear and q1 lies on segment p0p1
-        do_intersect[(o3 == 0) & self._onSegment(q0, p0, q1)] = True # q0 , q1 and p0 are collinear and p0 lies on segment q0q1
-        do_intersect[(o4 == 0) & self._onSegment(q0, p1, q1)] = True # q0 , q1 and p1 are collinear and p1 lies on segment q0q1
+        """ Ignoring special case where line segments """
+        # # Special Cases
+        # do_intersect[(o1 == 0) & self._onSegment(p0, q0, p1)] = True # p0 , p1 and q0 are collinear and q0 lies on segment p0p1
+        # do_intersect[(o2 == 0) & self._onSegment(p0, q1, p1)] = True # p0 , p1 and q1 are collinear and q1 lies on segment p0p1
+        # do_intersect[(o3 == 0) & self._onSegment(q0, p0, q1)] = True # q0 , q1 and p0 are collinear and p0 lies on segment q0q1
+        # do_intersect[(o4 == 0) & self._onSegment(q0, p1, q1)] = True # q0 , q1 and p1 are collinear and p1 lies on segment q0q1
     
         return do_intersect
 

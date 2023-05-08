@@ -8,6 +8,7 @@
 
 import numpy as np
 import copy
+import time
 
 from navigation import Navigation
 from parameters import Parameters
@@ -59,13 +60,17 @@ class MyController():
         self._scan_points_idx = 0 # index of the current scan point
         self._desired_height = self.params.mc_height_search
 
-        self._last_pos =(0.0, 0.0)
+        self._land_pos =(0.0, 0.0)
         self._land_vel = (0.0, 0.0)
         self._land_count = 0
+        self._yaw_approx = 0.0
 
 
     # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
+        # measure time of entire control loop
+        step_start_time = time.time()
+
         # global path planner: state machine
         desired_command = [0.0, 0.0, 0.0, 0.0]
         if self._state == "takeoff":
@@ -86,12 +91,20 @@ class MyController():
             self.vis.drawMap(sensor_data=sensor_data, real_command=real_command, desired_command=desired_command)
 
         # convert command from global to local frame
-        return self._gloabal2local(sensor_data=sensor_data, command=real_command)
+        local_command = self._gloabal2local(sensor_data=sensor_data, command=real_command)
+
+        # sleep to ensure no rush
+        step_time = time.time() - step_start_time
+        if step_time < self.params.mc_min_control_loop_time:
+            time.sleep(self.params.mc_min_control_loop_time - step_time)
+
+        # convert command from global to local frame
+        return local_command
         
 
     def _takeoff(self, sensor_data):
         if sensor_data['range_down'] < self._desired_height-0.01:
-            self._real_height += 0.01
+            self._real_height += 0.01 * (self._desired_height-sensor_data['range_down'])/self._desired_height
             command = [0.0, 0.0, 0.0, self._real_height]
         else:
             command = [0.0, 0.0, 0.0, self._desired_height]
@@ -115,19 +128,28 @@ class MyController():
 
             # calculate landing velocity
             # theta = np.arctan2(sensor_data["y_global"]-self._last_pos[1], sensor_data["x_global"]-self.last_pos[0])
-            theta = self._real_theta
+            theta = self._real_theta #self._yaw_approx #sensor_data['yaw'] #
             self._land_vel = (np.cos(theta)*self.params.mc_land_speed, np.sin(theta)*self.params.mc_land_speed)
+            self._land_pos = (sensor_data["x_global"], sensor_data["y_global"])
+            self
 
             # stop moving
-            return [self._land_vel[0], self._land_vel[1], 0.0, self._desired_height], [self._land_vel[0], self._land_vel[1], 0.0, self._desired_height]
-        else:
-            self._land_count = 0
+            command = [self._land_vel[0], self._land_vel[1], 0.0, self.params.mc_height_platform]
+            return command, command
+            
         
         # remember last position to calculate landing velocity
+        if sensor_data['yaw'] - self._yaw_approx > np.pi:
+            self._yaw_approx += 2*np.pi
+        elif sensor_data['yaw'] - self._yaw_approx < -np.pi:
+            self._yaw_approx -= 2*np.pi
+        self._yaw_approx = sensor_data['yaw']*0.5 + self._yaw_approx*0.5
         self.last_pos = (sensor_data["x_global"], sensor_data["y_global"])
 
         # find shortest path to next point
-        desired_theta, goal_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=self._search_points[self._search_points_idx])  
+        desired_theta, goal_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=self._search_points[self._search_points_idx]) 
+        if goal_in_polygon:
+            desired_theta = self._real_theta
 
         # check increase point index if next set point is reached
         self._checkPoint(sensor_data=sensor_data, dist=0.05, goal_in_polygon=goal_in_polygon)        
@@ -169,14 +191,17 @@ class MyController():
     #     return real_command, desired_command
     
     def _land(self, sensor_data):
-        # continue moveing in same direction for some time
-        self._land_count += 1
-        if self._land_count < self.params.mc_land_count_max:
-            return [self._land_vel[0], self._land_vel[1], 0.0, self._desired_height]
+        # # continue moveing in same direction for some time
+        # self._land_count += 1
+        # if self._land_count < self.params.mc_land_count_max:
+        #     return [self._land_vel[0], self._land_vel[1], 0.0, self.params.mc_height_platform]
+        
+        if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.mc_land_dist:
+            return [self._land_vel[0], self._land_vel[1], 0.0, self.params.mc_height_platform]
         
         # land
-        if sensor_data['range_down'] > 0.015:
-            self._real_height -= 0.01
+        if sensor_data['range_down'] > 0.02:
+            self._real_height -= 0.01 * (sensor_data['range_down'])/self._desired_height
         else:
             self._state = "reset"
             if self.params.verb: print("_land: land -> reset")

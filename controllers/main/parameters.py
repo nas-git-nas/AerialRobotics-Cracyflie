@@ -21,7 +21,10 @@ class Parameters():
         self.mc_min_nb_platform_points = 15
         self.mc_min_dist_platform_reached = 0.03
         self.mc_scan_dist = 0.15
-        self.mc_land_count_max = 3
+        self.mc_min_control_loop_time = 0.04
+        self.mc_land_count_max = int(round(1.5 / self.mc_min_control_loop_time, 0)) 
+        self.mc_land_dist = 0.04
+
         # self.mc_scan_delta_angle = 0.76 #1.57
         # self.mc_first_part_points = [(3.75, 1.40), (3.75, 1.00), (3.75, 0.60), 
         #                             (3.75, 0.25), (4.10, 0.25), (4.45, 0.25), (4.75, 0.25), (4.75, 0.50), (4.40, 0.50), (4.00, 0.50),

@@ -68,11 +68,11 @@ class VisibilityGraph():
                         if start_in_poly_idx and (i0 == 0 or i1 == 0):
                             continue
 
-                        # continue if p1 is in poly0 or p0 is in poly1 (except for border)
-                        if (not boarder_added) or (i0 != len(polygons)-2 and i1 != len(polygons)-2):
-                            if self.vis.insidePolygon(polygons=[poly0], point=p1, ignore_idx=[ignore_idx]) is not None \
-                                or self.vis.insidePolygon(polygons=[poly1], point=p0, ignore_idx=[ignore_idx]) is not None:
-                                continue
+                        # # continue if p1 is in poly0 or p0 is in poly1 (except for border)
+                        # if (not boarder_added) or (i0 != len(polygons)-2 and i1 != len(polygons)-2):
+                        #     if self.vis.insidePolygon(polygons=[poly0], point=p1, ignore_idx=[ignore_idx]) is not None \
+                        #         or self.vis.insidePolygon(polygons=[poly1], point=p0, ignore_idx=[ignore_idx]) is not None:
+                        #         continue
 
                         # calculate distance if p0 is visible to p1
                         if self._isVisible(i0, i1, j0, j1, p0, p1, polygons):                           
