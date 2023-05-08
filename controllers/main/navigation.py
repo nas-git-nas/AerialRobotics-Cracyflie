@@ -25,6 +25,7 @@ class Navigation():
 
         # initialize polygons and path
         self._polygons = [[]]
+        self._unfiltered_polygons = [[]]
         self._path = []
         self._start_in_polygon = None          
 
@@ -33,6 +34,8 @@ class Navigation():
             return np.copy(self._map)
         elif attr == "polygons":
             return copy.deepcopy(self._polygons)
+        elif attr == "unfiltered_polygons":
+            return copy.deepcopy(self._unfiltered_polygons)
         elif attr == "path":
             return copy.copy(self._path)
         elif attr == "start_in_polygon":
@@ -64,7 +67,9 @@ class Navigation():
             idx_y = self._pos2idx(dists_y, dim='y')
 
             # add measurement to the measurement map
-            if meas < self.params.nav_range_max:
+            if meas < self.params.nav_range_max \
+                and self.params.map_size_x[0] < dists_x[-1] and dists_x[-1] < self.params.map_size_x[1] \
+                and self.params.map_size_y[0] < dists_y[-1] and dists_y[-1] < self.params.map_size_y[1]:
                 meas_map[idx_x[:-1], idx_y[:-1]] = 0
                 meas_map[idx_x[-1], idx_y[-1]] = 1
             else:
@@ -91,7 +96,8 @@ class Navigation():
         start = (self._pos2idx(sensor_data['x_global'], "x"), self._pos2idx(sensor_data['y_global'], "y"))
         goal = (self._pos2idx(goal[0], "x"), self._pos2idx(goal[1], "y"))
 
-        polygons = self._findPolygons()      
+        polygons = self._findPolygons() 
+        self._unfiltered_polygons = copy.deepcopy(polygons)     
 
         # add boarder and filter polygons for better performance
         polygons.append(self._boarder)
@@ -118,17 +124,17 @@ class Navigation():
         map_array = self._map.copy().astype(np.float32).transpose()
 
         # Threshold the map
-        thresholded_map = (map_array > self.params.nav_threshold).astype(np.uint8)
+        #thresholded_map = (map_array > self.params.nav_threshold).astype(np.uint8)
 
         # Threshold the map
         _, thresholded_map = cv2.threshold(map_array, self.params.nav_threshold, 1, cv2.THRESH_BINARY)
 
         # Dilate the obstacles on the map
         dilated_map =   cv2.dilate(
-                            src = thresholded_map, 
-                            kernel = np.ones((self.params.nav_kernel_size,self.params.nav_kernel_size), np.uint8), 
-                            iterations = 1
-                        )
+                           src = thresholded_map, 
+                           kernel = np.ones((self.params.nav_kernel_size,self.params.nav_kernel_size), np.uint8), 
+                           iterations = 1
+                       )
         
         # Extract the contours of the obstacles from the map using opencv
         contours, _ = cv2.findContours(dilated_map.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -136,8 +142,8 @@ class Navigation():
         # Extract the polygons from the contours using opencv
         polygons = []
         for c in contours:
-            c_max = np.max(c, axis=(0,1))
-            c_min = np.min(c, axis=(0,1))
+            c_max = np.max(c, axis=(0,1)) + self.params.nav_object_extention
+            c_min = np.min(c, axis=(0,1)) - self.params.nav_object_extention
             polygons.append([(c_min[0], c_min[1]), (c_max[0], c_min[1]), 
                              (c_max[0], c_max[1]), (c_min[0], c_max[1])])
 

@@ -8,8 +8,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.5043756045746014 0.5130459210089173 0.6945423906761324 1.9855925680563464
-  position 1.0493426380983806 -0.8084711403403154 6.2196854730081235
+  orientation -0.5343285530350071 0.52484274051702 0.6625957252639799 2.0578643057758264
+  position 1.6659453075290656 -2.9955477436039297 17.963089398830817
   follow "crazyflie"
 }
 TexturedBackground {
@@ -218,6 +218,113 @@ DEF CHECKERBOARD_A4_25mm_8x6 Solid {
   ]
   name "checkerboard"
 }
+DEF OBSTACLE1 Solid {
+  translation 1.75 -1.6 0.74
+  children [
+    DEF CYLINDER_SHAPE Shape {
+      appearance PBRAppearance {
+        baseColorMap ImageTexture {
+          url [
+            "./textures_epfl_lis/obstacle_cylinder.jpg"
+          ]
+        }
+        roughness 1
+        metalness 0
+      }
+      geometry Cylinder {
+        height 1.48
+        radius 0.2
+      }
+    }
+  ]
+  name "obstacle-C1"
+  boundingObject USE CYLINDER_SHAPE
+}
+DEF OBSTACLE2 Solid {
+  translation 1.73 3.46 0.74
+  children [
+    USE CYLINDER_SHAPE
+  ]
+  name "obstacle-C2"
+  boundingObject USE CYLINDER_SHAPE
+}
+DEF OBSTACLE3 Solid {
+  translation 4.46 3.38 0.74
+  children [
+    USE CYLINDER_SHAPE
+  ]
+  name "obstacle-C3"
+  boundingObject USE CYLINDER_SHAPE
+}
+DEF OBSTACLE4 Solid {
+  translation 0.68 3.53 0.74
+  children [
+    USE CYLINDER_SHAPE
+  ]
+  name "obstacle-C4"
+  boundingObject USE CYLINDER_SHAPE
+}
+DEF OBSTACLE5 Solid {
+  translation 3.59 -0.83 0.74
+  children [
+    USE CYLINDER_SHAPE
+  ]
+  name "obstacle-C5"
+  boundingObject USE CYLINDER_SHAPE
+}
+DEF OBSTACLE6 Solid {
+  translation 3.73 3.25 0.75
+  children [
+    DEF BOX_SHAPE Shape {
+      appearance PBRAppearance {
+        baseColorMap ImageTexture {
+          url [
+            "./textures_epfl_lis/obstacle_box.jpg"
+          ]
+        }
+        roughness 1
+        metalness 0
+      }
+      geometry Box {
+        size 0.31 0.31 1.48
+      }
+    }
+  ]
+  name "obstacle-B1"
+  boundingObject USE BOX_SHAPE
+}
+DEF OBSTACLE7 Solid {
+  translation 2.86 -1.2 0.75
+  children [
+    USE BOX_SHAPE
+  ]
+  name "obstacle-B2"
+  boundingObject USE BOX_SHAPE
+}
+DEF OBSTACLE8 Solid {
+  translation 3 3.32 0.75
+  children [
+    USE BOX_SHAPE
+  ]
+  name "obstacle-B3"
+  boundingObject USE BOX_SHAPE
+}
+DEF OBSTACLE9 Solid {
+  translation 0.86 -0.91 0.75
+  children [
+    USE BOX_SHAPE
+  ]
+  name "obstacle-B4"
+  boundingObject USE BOX_SHAPE
+}
+DEF OBSTACLE10 Solid {
+  translation 2.03 -0.39 0.75
+  children [
+    USE BOX_SHAPE
+  ]
+  name "obstacle-B5"
+  boundingObject USE BOX_SHAPE
+}
 DEF TAKE_OFF_PAD Solid {
   translation 0.9660470000000083 0.8372480000000008 0.05
   children [
@@ -240,7 +347,7 @@ DEF TAKE_OFF_PAD Solid {
   boundingObject USE PAD_SHAPE
 }
 DEF LANDING_PAD Solid {
-  translation 4.5 1 0.05
+  translation 4.1 0.52 0.05
   children [
     USE PAD_SHAPE
   ]

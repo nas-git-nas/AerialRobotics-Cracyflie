@@ -56,21 +56,29 @@ class VisibilityGraph():
                         idx0 = poly_idx[i0]+j0
                         idx1 = poly_idx[i1]+j1
 
+                        # continue if graph entry was already determined
+                        if checked[idx0, idx1]:
+                            continue
+
+                        # indicate that graph entry and inverse were determined
+                        checked[idx0, idx1] = True
+                        checked[idx1, idx0] = True
+
                         # continue if start entry was already determined
                         if start_in_poly_idx and (i0 == 0 or i1 == 0):
                             continue
 
-                        # continue if graph entry was already determined
-                        if checked[idx0, idx1]:
-                            continue
+                        # continue if p1 is in poly0 or p0 is in poly1 (except for border)
+                        if (not boarder_added) or (i0 != len(polygons)-2 and i1 != len(polygons)-2):
+                            if self.vis.insidePolygon(polygons=[poly0], point=p1, ignore_idx=[ignore_idx]) is not None \
+                                or self.vis.insidePolygon(polygons=[poly1], point=p0, ignore_idx=[ignore_idx]) is not None:
+                                continue
 
                         # calculate distance if p0 is visible to p1
                         if self._isVisible(i0, i1, j0, j1, p0, p1, polygons):                           
                             graph[idx0, idx1] = self._calcDistance(p0, p1)
 
-                        # indicate that graph entry and inverse were determined
-                        checked[idx0, idx1] = True
-                        checked[idx1, idx0] = True
+                        
 
         self._graph = graph
         self._polygons = polygons
