@@ -15,12 +15,16 @@ class Parameters():
         self.mc_max_speed = 0.25 
         self.mc_min_speed = 0.01
         self.mc_land_speed = 0.05
-        self.mc_yaw_speed = 1.5 # constant yaw speed when searching
+        self.mc_yaw_speed = 1.0 # constant yaw speed when searching
         self.mc_height_search = 0.5
         self.mc_height_platform = self.mc_height_search - 0.1
         self.mc_height_delta = 0.07 # height difference for platform detection
         self.mc_min_control_loop_time = 0.04
         self.mc_land_dist = 0.04
+        self.mc_explore_min_vel = 0.02
+        self.mc_explore_counter_max_init = 150
+        self.mc_explore_counter_delta = 75
+        self.mc_explore_yaw_error = 0.01
         self.mc_search_points_lower = [ (3.9,1.1), (3.9,0.7),
                                         (3.9,0.4), (4.25,0.4), (4.6,0.4), (4.6,0.65), (4.4,0.65), (4.15,0.65),
                                         (4.15,0.7), (4.4,0.7), (4.6,0.7), (4.6,0.95), (4.4,0.95), (4.15,0.95),
