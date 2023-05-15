@@ -1,10 +1,12 @@
 import numpy as np
 import copy    
 
-from visibility import Visibility
-from dijkstra import Dijkstra
-
-
+try:
+    from visibility import Visibility
+    from dijkstra import Dijkstra
+except:
+    from .visibility import Visibility
+    from .dijkstra import Dijkstra
 
 class VisibilityGraph():
     def __init__(self) -> None:

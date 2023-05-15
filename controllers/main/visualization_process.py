@@ -32,9 +32,10 @@ class VisualizationProcess(multiprocessing.Process):
         
         while True:
             # Wait for the event to be set
-            if not self.event.wait(timeout=1):
+            if not self.event.wait(timeout=10):
                 # if waited too long -> free shared memory and exit process
                 existing_shm.close()
+                print("Visualization process: close visualization process")
                 break
 
             # update map and display plot

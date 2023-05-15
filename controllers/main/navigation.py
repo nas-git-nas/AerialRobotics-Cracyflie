@@ -4,9 +4,12 @@ import time
 import copy    
 from scipy.ndimage import binary_dilation, label
 
-
-from visibility_graph import VisibilityGraph
-from parameters import Parameters
+try:
+    from visibility_graph import VisibilityGraph
+    from parameters import Parameters
+except:
+    from .visibility_graph import VisibilityGraph
+    from .parameters import Parameters
 
 
 class Navigation():
@@ -16,7 +19,9 @@ class Navigation():
         self.vg = VisibilityGraph()  
        
         # initialize map and boarder
-        self._map = - np.ones((self._pos2idx(self.params.map_size_x[1], dim="x"), 
+        # self._map = - np.ones((self._pos2idx(self.params.map_size_x[1], dim="x"), 
+        #                        self._pos2idx(self.params.map_size_y[1], dim="y")))
+        self._map = np.zeros((self._pos2idx(self.params.map_size_x[1], dim="x"), 
                                self._pos2idx(self.params.map_size_y[1], dim="y")))
         self._boarder = [(self.params.map_boarder_size,self.params.map_boarder_size), 
                          (self._map.shape[0]-self.params.map_boarder_size,self.params.map_boarder_size),
@@ -68,9 +73,11 @@ class Navigation():
 
             # add measurement to the measurement map
             if meas < self.params.nav_range_max \
-                and self.params.map_size_x[0] < dists_x[-1] and dists_x[-1] < self.params.map_size_x[1] \
-                and self.params.map_size_y[0] < dists_y[-1] and dists_y[-1] < self.params.map_size_y[1]:
-                meas_map[idx_x[:-1], idx_y[:-1]] = 0
+                and (len(dists_x) > 0 and self.params.map_size_x[0] < dists_x[-1]) \
+                and (len(dists_x) > 0 and dists_x[-1] < self.params.map_size_x[1]) \
+                and (len(dists_y) > 0 and self.params.map_size_y[0] < dists_y[-1]) \
+                and (len(dists_y) > 0 and dists_y[-1] < self.params.map_size_y[1]):
+                meas_map[idx_x[:-3], idx_y[:-3]] = 0 # do not update the last two cells before the obstacle because of measurement noise
                 meas_map[idx_x[-1], idx_y[-1]] = 1
             else:
                 meas_map[idx_x, idx_y] = 0
@@ -107,17 +114,18 @@ class Navigation():
         polygons = [[start]] + polygons + [[goal]]
 
         # Create visibility graph and calculate shortest path
-        self._start_in_polygon, goal_in_polygon = self.vg.buildGraph(polygons=polygons, start=start, goal=goal, boarder_added=boarder_added)
+        start_in_polygon, goal_in_polygon = self.vg.buildGraph(polygons=polygons, start=start, goal=goal, boarder_added=boarder_added)
         path = self.vg.findShortestPath()
 
         # calc desired theta (angle of moevement)
-        desired_theta = self._calcDesiredTheta(sensor_data=sensor_data, path=path)
+        desired_yaw = self._calcDesiredYaw(sensor_data=sensor_data, path=path)
         
         # save polygons and path for plotting
         self._polygons = polygons
         self._path = path
+        self._start_in_polygon = start_in_polygon
         
-        return desired_theta, goal_in_polygon
+        return desired_yaw, goal_in_polygon, start_in_polygon
     
     def _findPolygons(self):
         # copy the map and transpose it (because cv2 takes y-axis in 1. and x-axes in 2. dimension)
@@ -175,7 +183,7 @@ class Navigation():
         return filtered_polygons, boarder_added
     
     
-    def _calcDesiredTheta(self, sensor_data, path):
+    def _calcDesiredYaw(self, sensor_data, path):
         # return None if no path was found
         if len(path) <= 1:
             return None
@@ -187,8 +195,8 @@ class Navigation():
                 break
         
         # return direction of movement
-        desired_theta = np.arctan2(next_point[1]-sensor_data["y_global"], next_point[0]-sensor_data["x_global"])
-        return desired_theta
+        desired_yaw = np.arctan2(next_point[1]-sensor_data["y_global"], next_point[0]-sensor_data["x_global"])
+        return desired_yaw
     
     def _pos2idx(self, pos, dim):
         if dim == "x":

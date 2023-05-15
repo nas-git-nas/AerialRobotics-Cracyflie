@@ -9,8 +9,12 @@
 import numpy as np
 import time
 
-from navigation import Navigation
-from parameters import Parameters
+try:
+    from navigation import Navigation
+    from parameters import Parameters
+except:
+    from controllers.main.navigation import Navigation
+    from controllers.main.parameters import Parameters
 
 """
 The VISUALIZATION class is only needed to visualize the drone in the simulation.
@@ -19,14 +23,20 @@ This import may be ignored if you don't need any visualization.
 try:
     from visualization import Visualization
 except:
-    pass
+    from controllers.main.visualization import Visualization
 
 
 
 # Don't change the class name of 'MyController'
 class MyController():
-    def __init__(self):
-        self.params = Parameters()
+    def __init__(self, params: Parameters=None):
+        # Initialize the parameters
+        if params is None:
+            self.params = Parameters()
+        else:
+            self.params = params
+
+        # Initialize the navigation and visualization
         self.nav = Navigation(params=self.params)
         if self.params.vis:
             self.vis = Visualization(nav=self.nav, params=self.params)
@@ -47,7 +57,8 @@ class MyController():
         """
         self._first_part = True
 
-        self._search_points = [(3.9,1.5)] # list of points to visit
+        # self._search_points = [(3.9,1.5)] # list of points to visit
+        self._search_points = [self.params.path_first_point] # list of points to visit
         self._search_points_idx = 0 # index of the current point
         self._init_position = None # initial position of the drone when taking off
 
@@ -59,9 +70,20 @@ class MyController():
         self._land_vel = (0.0, 0.0) # velocity of the drone when landing platform was detected
 
         self._explore_yaw = 0.0 # yaw goal of the drone when exploring
-        self._explore_counter = self.params.mc_explore_counter_max_init # counter for exploring
-        self._explore_counter_max = self.params.mc_explore_counter_max_init # maximum counter for exploring
+        self._explore_pos = (0.0, 0.0) # (x,y) position while exploring (keep it steady)
+        self._explore_counter = self.params.explore_counter_max_init # counter for exploring
+        self._explore_counter_max = self.params.explore_counter_max_init # maximum counter for exploring
 
+    def setLanding(self):
+        # transition to landing
+        if self._applied_height > 0.02:
+            if self.params.verb and self._state is not "land": 
+                print("setLanding: keyboard -> land")
+            self._state = "land"
+        else:
+            if self.params.verb and self._state is not "reset": 
+                print("setLanding: keyboard -> reset")
+            self._state = "reset"
 
     # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
@@ -75,7 +97,7 @@ class MyController():
         elif self._state == "search":                 
             real_command, desired_command = self._search(sensor_data)
         elif self._state == "explore":
-            real_command = self._explore(sensor_data)
+            real_command, desired_command = self._explore(sensor_data)
         elif self._state == "scan":
             real_command, desired_command = self._scan(sensor_data)       
         elif self._state == "land":
@@ -93,17 +115,20 @@ class MyController():
         local_command = self._gloabal2local(sensor_data=sensor_data, command=real_command)
 
         # sleep to ensure no rush
-        step_time = time.time() - step_start_time
-        if step_time < self.params.mc_min_control_loop_time:
-            time.sleep(self.params.mc_min_control_loop_time - step_time)
+        if self.params.simulation:
+            step_time = time.time() - step_start_time
+            if step_time < self.params.control_loop_period:
+                time.sleep(self.params.control_loop_period - step_time)
+
+        # print(f"yaw: {sensor_data['yaw']}")
 
         # convert command from global to local frame
         return local_command
         
 
     def _takeoff(self, sensor_data):
-        if sensor_data['range_down'] < self.params.mc_height_search-0.01:
-            self._applied_height += np.maximum(0.01 * (self.params.mc_height_search-sensor_data['range_down'])/self.params.mc_height_search, 0.002)
+        if sensor_data['range_down'] < self.params.sea_height_ground-0.03:
+            self._applied_height += np.maximum(0.01 * (self.params.sea_height_ground-sensor_data['range_down'])/self.params.sea_height_ground, 0.002)
             command = [0.0, 0.0, 0.0, self._applied_height]
         else:
             command = [0.0, 0.0, 0.0, self._applied_height]
@@ -126,20 +151,24 @@ class MyController():
             if self.params.verb: print("_search: search -> land")
 
             # calculate landing velocity and position where platform was detected
-            self._land_vel = (np.cos(self._applied_yaw)*self.params.mc_land_speed, np.sin(self._applied_yaw)*self.params.mc_land_speed)
+            self._land_vel = (np.cos(self._applied_yaw)*self.params.land_speed, np.sin(self._applied_yaw)*self.params.land_speed)
             self._land_pos = (sensor_data["x_global"], sensor_data["y_global"])
 
             # stop moving
             command = [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
             return command, command
+
+        # find shortest path to next point
+        desired_yaw, goal_in_polygon, start_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=self._search_points[self._search_points_idx]) 
         
         # check if drone should explore
         self._explore_counter += 1
-        if self._explore_counter > self._explore_counter_max:
+        if (self._explore_counter > self._explore_counter_max):
             # reset counter and set explore yaw
             self._explore_counter = 0
-            self._explore_counter_max += self.params.mc_explore_counter_delta
+            self._explore_counter_max += self.params.explore_counter_delta
             self._explore_yaw = sensor_data["yaw"] + np.pi/2
+            self._explore_pos = (sensor_data["x_global"], sensor_data["y_global"])
 
             # transition to explore
             self._state = "explore"
@@ -147,55 +176,67 @@ class MyController():
             command = [0.0, 0.0, 0.0, self._applied_height]
             return command, command
 
-        # find shortest path to next point
-        desired_theta, goal_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=self._search_points[self._search_points_idx]) 
-        if goal_in_polygon:
-            desired_theta = self._applied_yaw
-
         # check increase point index if next set point is reached
-        self._checkPoint(sensor_data=sensor_data, dist=0.05, goal_in_polygon=goal_in_polygon)        
+        self._checkPoint(sensor_data=sensor_data, dist=self.params.sea_point_reached_dist, goal_in_polygon=goal_in_polygon)  
+
+        # convert yaw to command
+        real_command, desired_command = self._yaw2command(
+            desired_yaw=desired_yaw, 
+            yaw_speed=0.0,
+            goal_in_polygon=goal_in_polygon, 
+            speed_max=self.params.sea_speed_max, 
+            speed_min=self.params.sea_speed_min,
+        )
 
         # return desired and real command
-        return self._theta2command(desired_theta, max_speed=self.params.mc_max_speed)
+        return real_command, desired_command
     
     def _explore(self, sensor_data):
         # Update the map
         self.nav.updateMap(sensor_data=sensor_data)
-
-        # check if drone is stationary
-        if np.sqrt(sensor_data["v_forward"]**2 + sensor_data["v_left"]**2) > self.params.mc_explore_min_vel:
-            # stop moving
-            return [0.0, 0.0, 0.0, self._applied_height]
         
-        # normalize explore yaw with respect to applied yaw
+        # normalize explore yaw with respect to real yaw
         if self._explore_yaw - sensor_data["yaw"] > np.pi:
             self._explore_yaw -= 2*np.pi
         elif self._explore_yaw - sensor_data["yaw"] <= -np.pi:
             self._explore_yaw += 2*np.pi
-
-        # print(f"explore_yaw: {self._explore_yaw}, applied_yaw: {sensor_data["yaw"]}")
         
         # check if drone turned enough
-        if abs(self._explore_yaw - sensor_data["yaw"]) < self.params.mc_explore_yaw_error:
+        if abs(self._explore_yaw - sensor_data["yaw"]) < self.params.explore_yaw_error:
             # transition to search
             self._state = "search"
             if self.params.verb: print("_explore: explore -> search")
-            return [0.0, 0.0, 0.0, self._applied_height]
-        
-        return [0.0, 0.0, self.params.mc_yaw_speed, self._applied_height]
+
+            command = [0.0, 0.0, 0.0, self._applied_height]
+            return command, command
+
+        # determine desired yaw to keep position steady while turning
+        desired_yaw = np.arctan2(self._explore_pos[1]-sensor_data["y_global"], self._explore_pos[1]-sensor_data["x_global"])
+
+        # convert yaw to command
+        real_command, desired_command = self._yaw2command(
+            desired_yaw=desired_yaw, 
+            yaw_speed=self.params.explore_yaw_speed,
+            goal_in_polygon=False, 
+            speed_max=self.params.explore_speed_max, 
+            speed_min=self.params.explore_speed_min,
+        )
+
+        # return desired and real command
+        return real_command, desired_command
     
     def _land(self, sensor_data):
         
         # continue moving in same direction for a fixed distance
-        if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.mc_land_dist:
+        if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist:
             # update applied height
-            self._applied_height = (1-self.params.mc_gamma_height)*self._applied_height + self.params.mc_gamma_height*self.params.mc_height_platform
+            self._updateAppliedHeight(desired_height=self.params.sea_height_platform)
 
             return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         
         # land
-        if sensor_data['range_down'] > 0.02:
-            self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.mc_height_search, 0.004)
+        if sensor_data['range_down'] > 0.02 * 1.5:
+            self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.sea_height_ground, 0.004)
         else:
             self._state = "reset"
             if self.params.verb: print("_land: land -> reset")
@@ -203,68 +244,80 @@ class MyController():
         return [0.0, 0.0, 0.0, self._applied_height]
     
     def _reset(self):
-        # return to starting area
-        if self._first_part:
-            self._first_part = False
-            self._search_points = [self._init_position]
-            self._search_points_idx = 0
+        # # return to starting area
+        # if self._first_part:
+        #     self._first_part = False
+        #     self._search_points = [self._init_position]
+        #     self._search_points_idx = 0
 
-            self._state = "takeoff"
-            if self.params.verb: print("_reset: reset -> takeoff")
+        #     self._state = "takeoff"
+        #     if self.params.verb: print("_reset: reset -> takeoff")
         
-        # update applied height
-        self._applied_height = (1-self.params.mc_gamma_height)*self._applied_height
-        return [0.0, 0.0, 0.0, self._applied_height]
-    
-    def _theta2command(self, desired_theta, max_speed):
-        # if desired theta is None (no path was found), use last theta
-        if desired_theta is None:
-            desired_theta = self._applied_yaw
-            if self.params.verb:
-                print(f"_theta2command: desired_theta is None, using last theta: {np.round(np.rad2deg(desired_theta),1)}°")
+        # # update applied height
+        # self._updateAppliedHeight(desired_height=0.0)
+        # return [0.0, 0.0, 0.0, self._applied_height]
 
-        # shift desired theta s.t. it is close (|error| <= pi) to real theta
-        theta_error = desired_theta - self._applied_yaw
-        if theta_error > np.pi:
-            desired_theta -= 2*np.pi
-        elif theta_error <= -np.pi:
-            desired_theta += 2*np.pi
+        return (0.0, 0.0, 0.0, 0.0)
+    
+    def _yaw2command(self, desired_yaw, yaw_speed, goal_in_polygon, speed_max, speed_min):
+        # if desired theta is None (no path was found), use last theta
+        if desired_yaw is None:
+            desired_yaw = self._applied_yaw
+            if self.params.verb:
+                print(f"_yaw2command: No path was found, using last yaw={np.round(np.rad2deg(desired_yaw),1)}°")
+
+        # if goal is inside polygon, use last theta
+        if goal_in_polygon:
+            desired_yaw = self._applied_yaw
+            if self.params.verb:
+                print(f"_yaw2command: Goal inside polygon, using last yaw={np.round(np.rad2deg(desired_yaw),1)}°")
         
         # update real theta with desired theta
-        self._applied_yaw = (1-self.params.mc_gamma_theta)*self._applied_yaw + self.params.mc_gamma_theta*desired_theta
+        self._updateAppliedYaw(desired_yaw=desired_yaw)
 
         # calculate real speed: max if real and desired theta are aligned, min if |error| >= pi/2
-        desired_speed = (1-abs(desired_theta-self._applied_yaw)/(np.pi/2)) * max_speed
-        desired_speed = np.clip(desired_speed, self.params.mc_min_speed, max_speed)
-        self._applied_speed = (1-self.params.mc_gamma_speed)*self._applied_speed + self.params.mc_gamma_speed*desired_speed
-        
-        # normalize real theta to (-pi, pi]
+        desired_speed = (1-abs(desired_yaw-self._applied_yaw)/(np.pi/2)) * speed_max
+        desired_speed = np.clip(desired_speed, speed_min, speed_max)
+        self._updateAppliedSpeed(desired_speed=desired_speed)       
+
+        # update applied height
+        self._updateAppliedHeight(desired_height=self.params.sea_height_ground)
+
+        # return real and desired commands
+        real_command = [self._applied_speed*np.cos(self._applied_yaw), self._applied_speed*np.sin(self._applied_yaw), yaw_speed, self._applied_height]
+        desired_command = [np.cos(desired_yaw)*self.params.sea_speed_max, np.sin(desired_yaw)*self.params.sea_speed_max, yaw_speed, self._applied_height] 
+        return real_command, desired_command
+    
+    def _updateAppliedYaw(self, desired_yaw):
+        # normalize applied yaw to (-pi, pi]
         if self._applied_yaw > np.pi:
             self._applied_yaw -= 2*np.pi
         elif self._applied_yaw <= -np.pi:
             self._applied_yaw += 2*np.pi
 
-        # update applied height
-        self._applied_height = (1-self.params.mc_gamma_height)*self._applied_height + self.params.mc_gamma_height*self.params.mc_height_search
+        # shift desired yaw s.t. it is close to real applied yaw (|error| <= pi)
+        theta_error = desired_yaw - self._applied_yaw
+        if theta_error > np.pi:
+            desired_yaw -= 2*np.pi
+        elif theta_error <= -np.pi:
+            desired_yaw += 2*np.pi
 
-        # return real and desired commands
-        real_command = [self._applied_speed*np.cos(self._applied_yaw), self._applied_speed*np.sin(self._applied_yaw), 
-                        0.0, self._applied_height]
-        desired_command = [np.cos(desired_theta)*self.params.mc_max_speed, np.sin(desired_theta)*self.params.mc_max_speed, 
-                           0.0, self._applied_height] 
-        # real_command = [self._applied_speed*np.cos(self._applied_yaw), self._applied_speed*np.sin(self._applied_yaw), 
-        #                 self.params.mc_yaw_speed, self._applied_height]
-        # desired_command = [np.cos(desired_theta)*self.params.mc_max_speed, np.sin(desired_theta)*self.params.mc_max_speed, 
-        #                    self.params.mc_yaw_speed, self._applied_height]     
-        return real_command, desired_command
+        # update applied yaw
+        self._applied_yaw = (1-self.params.sea_alpha_yaw) * self._applied_yaw + self.params.sea_alpha_yaw * desired_yaw
+    
+    def _updateAppliedSpeed(self, desired_speed):
+        self._applied_speed = (1-self.params.sea_alpha_speed) * self._applied_speed + self.params.sea_alpha_speed * desired_speed
+    
+    def _updateAppliedHeight(self, desired_height):
+        self._applied_height = (1-self.params.sea_alpha_height) * self._applied_height + self.params.sea_alpha_height * desired_height
     
     def _platformTransition(self, sensor_data):
         # check if drone is in landing or starting region
-        if ((self._first_part and sensor_data['x_global']<self.params.map_landing_region_x[0]) \
-            or (not self._first_part and sensor_data['x_global']>self.params.map_starting_region_x[1])):
+        if ((self._first_part and sensor_data['x_global']<self.params.map_landing_region_x[0]-0.2) \
+            or (not self._first_part and sensor_data['x_global']>self.params.map_starting_region_x[1]+0.2)):
             return False
         
-        if self._applied_height-sensor_data['range_down'] > self.params.mc_height_delta:
+        if self._applied_height-sensor_data['range_down'] > self.params.sea_height_delta:
             self._applied_height = sensor_data['range_down']
             if self.params.verb:
                 print("_platformTransition: transition detected")
@@ -275,7 +328,7 @@ class MyController():
     def _gloabal2local(self, sensor_data, command):
         vx = command[0]*np.cos(sensor_data['yaw']) + command[1]*np.sin(sensor_data['yaw'])
         vy = -command[0]*np.sin(sensor_data['yaw']) + command[1]*np.cos(sensor_data['yaw'])
-        return [vx, vy, command[2], command[3]]
+        return [vx, vy, -command[2], command[3]]
     
     def _dist2point(self, sensor_data, point):
         v_x = point[0] - sensor_data['x_global']
@@ -302,7 +355,7 @@ class MyController():
         return False
     
     def _incPointIndex(self):
-        # increase point index
+        # continue searching if not all points are yet explored
         self._search_points_idx += 1
         if self._search_points_idx < len(self._search_points):
             return
@@ -310,11 +363,26 @@ class MyController():
         # reset search points if the counter is out of range
         self._search_points_idx = 0
 
-        if not self._first_part: # second part: return to starting platform
+        # second part: return to starting platform
+        if not self._first_part: 
             self._search_points = [self._init_position]
-        else: # first part: search for landing platform
-            # count the number of polygons in the lower and upper part of the landing region
+            return
+        
+        # first part: search for landing platform
+        # count the number of polygons in the lower and upper part of the landing region
+        upper_counter, lower_counter = self._countObstaclesInLowerUpperParts()
+
+        # search first the part with fewer polygons
+        if upper_counter > lower_counter:
+            self._search_points = self.params.path_search_points_lower + self.params.path_search_points_upper
+        else:
+            self._search_points = self.params.path_search_points_upper + self.params.path_search_points_lower
+
+    def _countObstaclesInLowerUpperParts(self):
+            # get all (unfiltered polygons)
             polygons = self.nav.get('unfiltered_polygons')
+
+            # count polygons in upper and lower landing region
             upper_counter = 0
             lower_counter = 0
             for poly in polygons:
@@ -332,12 +400,25 @@ class MyController():
             if self.params.verb:
                 print(f"_incPointIndex: upper_counter: {upper_counter}, lower_counter: {lower_counter}")
 
-            # search first the part with fewer polygons
-            if upper_counter > lower_counter:
-                self._search_points = self.params.mc_search_points_lower + self.params.mc_search_points_upper
-            else:
-                self._search_points = self.params.mc_search_points_upper + self.params.mc_search_points_lower
-                
+            return upper_counter, lower_counter
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     # def _scan(self, sensor_data):
     #     # Update the map
@@ -368,7 +449,7 @@ class MyController():
     #             self._scan_points_idx += 1
 
     #     desired_theta, goal_in_polygon = self.nav.findPath(sensor_data=sensor_data, goal=goal)
-    #     real_command, desired_command = self._theta2command(desired_theta, max_speed=self.params.mc_land_speed)
+    #     real_command, desired_command = self._theta2command(desired_theta, max_speed=self.params.land_speed)
 
     #     return real_command, desired_command
 

@@ -28,11 +28,15 @@ and prints it to the console. After 10s the application disconnects and exits.
 import logging
 import time
 from threading import Timer
+import copy
+import numpy as np
 
 import cflib.crtp  # noqa
 from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.log import LogConfig
 from cflib.utils import uri_helper
+
+from controllers.main.parameters import Parameters
 
 uri = uri_helper.uri_from_env(default='radio://0/100/2M/E7E7E7E710')
 
@@ -46,8 +50,9 @@ class CrazyflieConnection():
     link uri and disconnects after 5s.
     """
 
-    def __init__(self, link_uri):
+    def __init__(self, link_uri, params: Parameters):
         """ Initialize and run the example with the specified link_uri """
+        self.params = params
 
         self._cf = Crazyflie(rw_cache='./cache')
 
@@ -65,6 +70,18 @@ class CrazyflieConnection():
         # Variable used to keep main loop occupied until disconnect
         self.is_connected = True
 
+        # sensor data
+        self._sensor_data = { 
+            "x_global": 0.0,
+            "y_global": 0.0,
+            "yaw": 0.0,
+            "range_front": 0.0,
+            "range_left": 0.0,
+            "range_back": 0.0,
+            "range_right": 0.0,
+            "range_down": 0.0,
+        }
+
     def setParamValue(self, param, value):
         self._cf.param.set_value(param, value)
 
@@ -74,13 +91,17 @@ class CrazyflieConnection():
     def setStopCommand(self):
         self._cf.commander.send_stop_setpoint()
 
+    def getSensorData(self):
+        sensor_data = copy.deepcopy(self._sensor_data)
+        return sensor_data
+
     def _connected(self, link_uri):
         """ This callback is called form the Crazyflie API when a Crazyflie
         has been connected and the TOCs have been downloaded."""
         print('Connected to %s' % link_uri)
 
         # The definition of the logconfig can be made before connecting
-        self._lg_stab = LogConfig(name='Stabilizer', period_in_ms=50)
+        self._lg_stab = LogConfig(name='Stabilizer', period_in_ms=20) # 50
         self._lg_stab.add_variable('stateEstimate.x', 'float')
         self._lg_stab.add_variable('stateEstimate.y', 'float')
         self._lg_stab.add_variable('stateEstimate.z', 'float')
@@ -89,6 +110,7 @@ class CrazyflieConnection():
         self._lg_stab.add_variable('range.back')
         self._lg_stab.add_variable('range.left')
         self._lg_stab.add_variable('range.right')
+        self._lg_stab.add_variable('range.zrange')
         # The fetch-as argument can be set to FP16 to save space in the log packet
         # self._lg_stab.add_variable('pm.vbat', 'FP16')
 
@@ -119,10 +141,42 @@ class CrazyflieConnection():
 
     def _stab_log_data(self, timestamp, data, logconf):
         """Callback from a the log API when data arrives"""
-        print(f'[{timestamp}][{logconf.name}]: ', end='')
-        for name, value in data.items():
-            print(f'{name}: {value:3.3f} ', end='')
-        print()
+        # print(f'[{timestamp}][{logconf.name}]: ', end='')
+        # for name, value in data.items():
+        #     print(f'{name}: {value:3.3f} ', end='')
+        # print()
+
+        x_global = data["stateEstimate.x"] + self.params.path_init_pos[0]
+        y_global = data["stateEstimate.y"] + self.params.path_init_pos[1]
+        yaw = data["stabilizer.yaw"] * np.pi / 180.0
+        front = data["range.front"] / 1000.0
+        back = data["range.back"] / 1000.0
+        left = data["range.left"] / 1000.0
+        right = data["range.right"] / 1000.0
+        down = data["range.zrange"] / 1000.0
+
+        # normalize yaw
+        if yaw - self._sensor_data["yaw"] > np.pi:
+            yaw -= 2 * np.pi
+        elif yaw - self._sensor_data["yaw"] <= -np.pi:
+            yaw += 2 * np.pi
+
+        alpha = 1.0
+
+        self._sensor_data["x_global"] = alpha * x_global + (1 - alpha) * self._sensor_data["x_global"]
+        self._sensor_data["y_global"] = alpha * y_global + (1 - alpha) * self._sensor_data["y_global"]
+        self._sensor_data["yaw"] = alpha * yaw + (1 - alpha) * self._sensor_data["yaw"]
+        self._sensor_data["range_front"] = alpha * front + (1 - alpha) * self._sensor_data["range_front"]
+        self._sensor_data["range_back"] = alpha * back + (1 - alpha) * self._sensor_data["range_back"]
+        self._sensor_data["range_left"] = alpha * left + (1 - alpha) * self._sensor_data["range_left"]
+        self._sensor_data["range_right"] = alpha * right + (1 - alpha) * self._sensor_data["range_right"]
+        self._sensor_data["range_down"] =  alpha * down + (1 - alpha) * self._sensor_data["range_down"]
+
+        # print(f"yaw: meas={round(np.rad2deg(yaw), 2)}, filtered={round(np.rad2deg(self._sensor_data['yaw']), 2)}")
+
+        # print(f"measurement: \t{round(front, 2)}, {round(back, 2)}, {round(left, 2)}, {round(right, 2)}, {round(down, 2)}")
+        # print(f"filtered: \t{round(self._sensor_data['range_front'], 2)}, {round(self._sensor_data['range_back'], 2)}, \
+        #       {round(self._sensor_data['range_left'], 2)}, {round(self._sensor_data['range_right'], 2)}, {round(self._sensor_data['range_down'], 2)}")
 
     def _connection_failed(self, link_uri, msg):
         """Callback when connection initial connection fails (i.e no Crazyflie

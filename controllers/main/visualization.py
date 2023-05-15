@@ -4,9 +4,14 @@ import skimage
 import multiprocessing
 from multiprocessing import shared_memory
 
-from visualization_process import VisualizationProcess
-from navigation import Navigation
-from parameters import Parameters
+try:
+    from visualization_process import VisualizationProcess
+    from navigation import Navigation
+    from parameters import Parameters
+except:
+    from controllers.main.visualization_process import VisualizationProcess
+    from controllers.main.navigation import Navigation
+    from controllers.main.parameters import Parameters
 
 
 
@@ -78,14 +83,14 @@ class Visualization():
                     map_img[cc, rr, 1] = 255
                     map_img[cc, rr, 2] = 0
 
-        # draw polygon center in orange if current position is inside polygon
-        if start_in_polygon is not None:  
-            x_mean = np.mean([p[0] for p in polygons[start_in_polygon]], dtype=np.uint32)
-            y_mean = np.mean([p[1] for p in polygons[start_in_polygon]], dtype=np.uint32)
-            rr, cc = skimage.draw.ellipse(x_mean, y_mean, r_radius=4, c_radius=4, shape=map_copy.shape)
-            map_img[cc, rr, 0] = 255
-            map_img[cc, rr, 1] = 165
-            map_img[cc, rr, 2] = 0
+        # # draw polygon center in orange if current position is inside polygon
+        # if start_in_polygon is not None:  
+        #     x_mean = np.mean([p[0] for p in polygons[start_in_polygon]], dtype=np.uint32)
+        #     y_mean = np.mean([p[1] for p in polygons[start_in_polygon]], dtype=np.uint32)
+        #     rr, cc = skimage.draw.ellipse(x_mean, y_mean, r_radius=4, c_radius=4, shape=map_copy.shape)
+        #     map_img[cc, rr, 0] = 255
+        #     map_img[cc, rr, 1] = 165
+        #     map_img[cc, rr, 2] = 0
 
         # draw path in violett
         for i in range(len(path)-1):
@@ -103,7 +108,7 @@ class Visualization():
         x1 = self.nav._pos2idx(sensor_data['x_global'] + real_command[0], "x")
         y1 = self.nav._pos2idx(sensor_data['y_global'] + real_command[1], "y")
         rr_line, cc_line = skimage.draw.line(x0, y0, x1, y1)
-        rr_circle, cc_circle, = skimage.draw.ellipse(x0, y0, r_radius=4, c_radius=4, shape=map_copy.shape)
+        rr_circle, cc_circle, = skimage.draw.ellipse(x0, y0, r_radius=2, c_radius=2, shape=map_copy.shape)
         rr = np.concatenate((rr_line, rr_circle))
         cc = np.concatenate((cc_line, cc_circle))
         map_img[cc, rr, 0] = 0
