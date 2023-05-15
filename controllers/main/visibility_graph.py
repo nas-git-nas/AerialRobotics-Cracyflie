@@ -126,6 +126,33 @@ class VisibilityGraph():
             start_in_poly_idx = copy.copy(start_in_poly_idx)
             poly_idx = copy.copy(poly_idx)
 
+            # closest_dist = np.Inf
+            # closest_idx = None
+            # for i, p in enumerate(polygons[start_in_poly_idx]):
+            #     dist = self._calcDistance(start, p)
+            #     if dist < closest_dist:
+            #         closest_dist = dist
+            #         closest_idx = i
+
+            # graph[0, poly_idx[start_in_poly_idx]+closest_idx] = closest_dist
+
+            # closest_dists = [np.Inf, np.Inf]
+            # closest_idxs = [None, None]
+            # for i, p in enumerate(polygons[start_in_poly_idx]):
+            #     dist = self._calcDistance(start, p)
+            #     if dist < closest_dists[0]:
+            #         closest_dists[1] = closest_dists[0]
+            #         closest_idxs[1] = closest_idxs[0]
+            #         closest_dists[0] = dist
+            #         closest_idxs[0] = i
+            #         continue
+            #     if dist < closest_dists[1]:
+            #         closest_dists[1] = dist
+            #         closest_idxs[1] = i
+
+            # graph[0, poly_idx[start_in_poly_idx]+closest_idxs[0]] = closest_dists[0]
+            # graph[0, poly_idx[start_in_poly_idx]+closest_idxs[1]] = closest_dists[1]
+
             # calculate distances from start to all points in polygon
             polygon = np.array(polygons[start_in_poly_idx], dtype=np.uint32)
             xy_min = np.min(polygon, axis=0).astype(np.uint32)

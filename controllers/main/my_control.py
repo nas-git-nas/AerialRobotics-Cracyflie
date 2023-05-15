@@ -77,11 +77,11 @@ class MyController():
     def setLanding(self):
         # transition to landing
         if self._applied_height > 0.02:
-            if self.params.verb and self._state is not "land": 
+            if self.params.verb and (self._state != "land"): 
                 print("setLanding: keyboard -> land")
             self._state = "land"
         else:
-            if self.params.verb and self._state is not "reset": 
+            if self.params.verb and (self._state != "reset"): 
                 print("setLanding: keyboard -> reset")
             self._state = "reset"
 
@@ -128,7 +128,7 @@ class MyController():
 
     def _takeoff(self, sensor_data):
         if sensor_data['range_down'] < self.params.sea_height_ground-0.03:
-            self._applied_height += np.maximum(0.01 * (self.params.sea_height_ground-sensor_data['range_down'])/self.params.sea_height_ground, 0.002)
+            self._applied_height += np.maximum(0.005 * (self.params.sea_height_ground-sensor_data['range_down'])/self.params.sea_height_ground, 0.002)
             command = [0.0, 0.0, 0.0, self._applied_height]
         else:
             command = [0.0, 0.0, 0.0, self._applied_height]
@@ -163,7 +163,7 @@ class MyController():
         
         # check if drone should explore
         self._explore_counter += 1
-        if (self._explore_counter > self._explore_counter_max):
+        if (self._explore_counter > self._explore_counter_max) and (not start_in_polygon):
             # reset counter and set explore yaw
             self._explore_counter = 0
             self._explore_counter_max += self.params.explore_counter_delta
@@ -218,7 +218,7 @@ class MyController():
             desired_yaw=desired_yaw, 
             yaw_speed=self.params.explore_yaw_speed,
             goal_in_polygon=False, 
-            speed_max=self.params.explore_speed_max, 
+            speed_max=self.params.explore_speed_min, 
             speed_min=self.params.explore_speed_min,
         )
 
@@ -312,12 +312,14 @@ class MyController():
         self._applied_height = (1-self.params.sea_alpha_height) * self._applied_height + self.params.sea_alpha_height * desired_height
     
     def _platformTransition(self, sensor_data):
+        
         # check if drone is in landing or starting region
-        if ((self._first_part and sensor_data['x_global']<self.params.map_landing_region_x[0]-0.2) \
-            or (not self._first_part and sensor_data['x_global']>self.params.map_starting_region_x[1]+0.2)):
+        if ((self._first_part and sensor_data['x_global'] < self.params.map_starting_region_x[1]) \
+            or (not self._first_part and sensor_data['x_global'] > self.params.map_landing_region_x[0])):
             return False
         
-        if self._applied_height-sensor_data['range_down'] > self.params.sea_height_delta:
+        # if self._applied_height-sensor_data['range_down'] > self.params.sea_height_delta:
+        if self.params.sea_height_ground-sensor_data['range_down'] > self.params.sea_height_delta:
             self._applied_height = sensor_data['range_down']
             if self.params.verb:
                 print("_platformTransition: transition detected")

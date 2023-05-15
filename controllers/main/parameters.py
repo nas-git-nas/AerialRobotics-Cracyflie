@@ -40,7 +40,7 @@ class Parameters():
         self.sea_speed_min = 0.02 #0.01
         self.sea_height_ground = 0.35
         self.sea_height_platform = self.sea_height_ground - 0.1
-        self.sea_height_delta = 0.05 # height difference for platform detection
+        self.sea_height_delta = 0.06    § # height difference for platform detection
         self.sea_point_reached_dist = 0.08 # distance to point when it is considered reached
 
         """
@@ -80,10 +80,11 @@ class Parameters():
         - navigation related constants in Navigation
         """
         self.nav_range_max = 1.5 # maximum range of the sensor in meters
-        self.nav_alpha = 0.55 # update rate of new measurements
+        self.nav_alpha = 0.4 # update rate of new measurements
         self.nav_gamma = 1.0 # discount factor of old measurements
         self.nav_threshold = 0.5 # threshold for occupied space
-        self.nav_object_extention = int(round(0.15/self.map_res, 0)) # extention of the objects in meters
-        self.nav_kernel_size = int(round(0.15/ self.map_res, 0))
+        self.nav_object_extention = int(round(0.10/self.map_res, 0)) # extention of the objects in meters
+        self.nav_kernel_size = int(round(0.13/ self.map_res, 0))
         self.nav_polygon_filter_dist = 1.2/self.map_res # filter polygons with a distance smaller than this value
-        self.nav_point_reached_dist = 0.06 # in meters, distance to a point to be considered as reached
+        self.nav_point_reached_dist = 0.08 # in meters, distance to a point to be considered as reached
+        self.nav_yaw_correction = 0.35 # in radians, yaw correction to move away from obstacle if drone is inside polygon

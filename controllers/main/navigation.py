@@ -118,7 +118,7 @@ class Navigation():
         path = self.vg.findShortestPath()
 
         # calc desired theta (angle of moevement)
-        desired_yaw = self._calcDesiredYaw(sensor_data=sensor_data, path=path)
+        desired_yaw = self._calcDesiredYaw(sensor_data=sensor_data, path=path, polygons=polygons, start_in_poly=start_in_polygon)
         
         # save polygons and path for plotting
         self._polygons = polygons
@@ -183,7 +183,7 @@ class Navigation():
         return filtered_polygons, boarder_added
     
     
-    def _calcDesiredYaw(self, sensor_data, path):
+    def _calcDesiredYaw(self, sensor_data, path, polygons, start_in_poly):
         # return None if no path was found
         if len(path) <= 1:
             return None
@@ -194,8 +194,21 @@ class Navigation():
             if self._dist2point(sensor_data, next_point) > self.params.nav_point_reached_dist:
                 break
         
-        # return direction of movement
+        # calculate desired yaw: desired direction of movement
         desired_yaw = np.arctan2(next_point[1]-sensor_data["y_global"], next_point[0]-sensor_data["x_global"])
+
+        # correct desired yaw if drone is inside a polygon: move outwards/away from obstacle
+        if start_in_poly:
+            # calculate yaw with respect to polygon
+            poly_mean_xy = np.mean(polygons[start_in_poly], axis=0)
+            poly_yaw = np.arctan2(poly_mean_xy[1]-sensor_data["y_global"], poly_mean_xy[0]-sensor_data["x_global"])
+
+            # correct yaw to move outwards of polygon
+            if desired_yaw > poly_yaw:
+                desired_yaw += self.params.nav_yaw_correction
+            else:
+                desired_yaw -= self.params.nav_yaw_correction
+
         return desired_yaw
     
     def _pos2idx(self, pos, dim):

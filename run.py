@@ -62,13 +62,13 @@ class KeyEventThread(threading.Thread):
         super().__init__(group, target, name, args, kwargs, daemon=daemon)
 
         # keyboard commands
-        self.key_exit = False
+        self.key_kill = False
         self.key_land = False
 
     def run(self):
         while True:
-            if keyboard.read_key() == "e":
-                self.key_exit = True
+            if keyboard.read_key() == "k":
+                self.key_kill = True
                 break
             if keyboard.read_key() == "l":
                 self.key_land = True
@@ -114,7 +114,7 @@ def main():
             controller.setLanding()
 
         # check if stop command was sent
-        if np.allclose(command, (0.0, 0.0, 0.0, 0.0)) or keythread.key_exit:
+        if np.allclose(command, (0.0, 0.0, 0.0, 0.0)) or keythread.key_kill:
             drone.setStopCommand()
             print("main: shutting down crazyflie")
             break

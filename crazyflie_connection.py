@@ -161,7 +161,7 @@ class CrazyflieConnection():
         elif yaw - self._sensor_data["yaw"] <= -np.pi:
             yaw += 2 * np.pi
 
-        alpha = 1.0
+        alpha = 0.5
 
         self._sensor_data["x_global"] = alpha * x_global + (1 - alpha) * self._sensor_data["x_global"]
         self._sensor_data["y_global"] = alpha * y_global + (1 - alpha) * self._sensor_data["y_global"]
