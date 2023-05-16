@@ -200,8 +200,16 @@ class Navigation():
         # correct desired yaw if drone is inside a polygon: move outwards/away from obstacle
         if start_in_poly:
             # calculate yaw with respect to polygon
-            poly_mean_xy = np.mean(polygons[start_in_poly], axis=0)
-            poly_yaw = np.arctan2(poly_mean_xy[1]-sensor_data["y_global"], poly_mean_xy[0]-sensor_data["x_global"])
+            poly_mean_xy = np.mean(polygons[start_in_poly], axis=0) # in pixels
+            mean_x = self._idx2pos(idx=poly_mean_xy[0], dim="x") # in meters
+            mean_y = self._idx2pos(idx=poly_mean_xy[1], dim="y") # in meters
+            poly_yaw = np.arctan2(mean_y-sensor_data["y_global"], mean_x-sensor_data["x_global"])
+
+            # normalize polygon yaw with respect to desired yaw
+            if poly_yaw - desired_yaw > np.pi:
+                poly_yaw -= 2*np.pi
+            elif poly_yaw - desired_yaw <= -np.pi:
+                poly_yaw += 2*np.pi
 
             # correct yaw to move outwards of polygon
             if desired_yaw > poly_yaw:

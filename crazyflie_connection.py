@@ -149,10 +149,10 @@ class CrazyflieConnection():
         x_global = data["stateEstimate.x"] + self.params.path_init_pos[0]
         y_global = data["stateEstimate.y"] + self.params.path_init_pos[1]
         yaw = data["stabilizer.yaw"] * np.pi / 180.0
-        front = data["range.front"] / 1000.0
-        back = data["range.back"] / 1000.0
-        left = data["range.left"] / 1000.0
-        right = data["range.right"] / 1000.0
+        front = (data["range.front"] / 1000.0) + 0.015
+        back = (data["range.back"] / 1000.0) + 0.015
+        left = (data["range.left"] / 1000.0) + 0.015
+        right = (data["range.right"] / 1000.0) + 0.015
         down = data["range.zrange"] / 1000.0
 
         # normalize yaw
@@ -161,17 +161,19 @@ class CrazyflieConnection():
         elif yaw - self._sensor_data["yaw"] <= -np.pi:
             yaw += 2 * np.pi
 
-        alpha = 1.0
-        self._sensor_data["x_global"] = alpha * x_global + (1 - alpha) * self._sensor_data["x_global"]
-        self._sensor_data["y_global"] = alpha * y_global + (1 - alpha) * self._sensor_data["y_global"]
-        self._sensor_data["yaw"] = alpha * yaw + (1 - alpha) * self._sensor_data["yaw"]
-        self._sensor_data["range_down"] =  alpha * down + (1 - alpha) * self._sensor_data["range_down"]
+        # hard update because measurement fusion is already done by Extended Kalman Filter
+        self._sensor_data["x_global"] = x_global
+        self._sensor_data["y_global"] = y_global
+        self._sensor_data["yaw"] = yaw
+        
+        # soft update because measurements are noisy
+        self._sensor_data["range_front"] = self.params.crazy_alpha * front + (1 - self.params.crazy_alpha) * self._sensor_data["range_front"]
+        self._sensor_data["range_back"] = self.params.crazy_alpha * back + (1 - self.params.crazy_alpha) * self._sensor_data["range_back"]
+        self._sensor_data["range_left"] = self.params.crazy_alpha * left + (1 - self.params.crazy_alpha) * self._sensor_data["range_left"]
+        self._sensor_data["range_right"] = self.params.crazy_alpha * right + (1 - self.params.crazy_alpha) * self._sensor_data["range_right"]
 
-        alpha = 0.5
-        self._sensor_data["range_front"] = alpha * front + (1 - alpha) * self._sensor_data["range_front"]
-        self._sensor_data["range_back"] = alpha * back + (1 - alpha) * self._sensor_data["range_back"]
-        self._sensor_data["range_left"] = alpha * left + (1 - alpha) * self._sensor_data["range_left"]
-        self._sensor_data["range_right"] = alpha * right + (1 - alpha) * self._sensor_data["range_right"]
+        # hard update because transition to landing platform must be detected
+        self._sensor_data["range_down"] = down
         
 
         # print(f"yaw: meas={round(np.rad2deg(yaw), 2)}, filtered={round(np.rad2deg(self._sensor_data['yaw']), 2)}")

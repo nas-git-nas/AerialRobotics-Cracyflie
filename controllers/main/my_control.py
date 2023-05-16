@@ -12,19 +12,11 @@ import time
 try:
     from navigation import Navigation
     from parameters import Parameters
+    from visualization import Visualization
 except:
     from controllers.main.navigation import Navigation
     from controllers.main.parameters import Parameters
-
-"""
-The VISUALIZATION class is only needed to visualize the drone in the simulation.
-This import may be ignored if you don't need any visualization.
-"""
-try:
-    from visualization import Visualization
-except:
     from controllers.main.visualization import Visualization
-
 
 
 # Don't change the class name of 'MyController'
@@ -74,6 +66,8 @@ class MyController():
         self._explore_pos = (0.0, 0.0) # (x,y) position while exploring (keep it steady)
         self._explore_counter = self.params.explore_counter_max_init # counter for exploring
         self._explore_counter_max = self.params.explore_counter_max_init # maximum counter for exploring
+
+        self._reset_counter = 0 # counter for approaching ground during reset (only in first part)
 
     def setLanding(self):
         """
@@ -185,11 +179,18 @@ class MyController():
         # check if drone should explore
         self._explore_counter += 1
         if (self._explore_counter > self._explore_counter_max) and (not start_in_polygon):
-            # reset counter and set explore yaw
+            # reset counter
             self._explore_counter = 0
             self._explore_counter_max += self.params.explore_counter_delta
-            self._explore_yaw = sensor_data["yaw"] + np.pi/4
+
+            # remember position to keep it constant during exploring
             self._explore_pos = (sensor_data["x_global"], sensor_data["y_global"])
+
+            # set yaw to which drone turns while exploring
+            if self._explore_yaw == 0.0: # turn for the first time more
+                self._explore_yaw = sensor_data["yaw"] + np.pi/2 
+            else:
+                self._explore_yaw = sensor_data["yaw"] + np.pi/3         
 
             # transition to explore
             self._state = "explore"
@@ -239,14 +240,14 @@ class MyController():
             return command, command
 
         # determine desired yaw to keep position steady while turning
-        desired_yaw = np.arctan2(self._explore_pos[1]-sensor_data["y_global"], self._explore_pos[1]-sensor_data["x_global"])
+        desired_yaw = np.arctan2(self._explore_pos[1]-sensor_data["y_global"], self._explore_pos[0]-sensor_data["x_global"])
 
         # convert yaw to command
         real_command, desired_command = self._yaw2command(
             desired_yaw=desired_yaw, 
             yaw_speed=self.params.explore_yaw_speed,
             goal_in_polygon=None, 
-            speed_max=self.params.explore_speed_min, 
+            speed_max=self.params.explore_speed_max, 
             speed_min=self.params.explore_speed_min,
         )
 
@@ -270,7 +271,7 @@ class MyController():
             return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         
         # land
-        if sensor_data['range_down'] > 0.02 * 1.5:
+        if sensor_data['range_down'] > 0.03:
             self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.sea_height_ground, 0.004)
         else:
             self._state = "reset"
@@ -284,19 +285,24 @@ class MyController():
         the state 'takeoff' and search the starting platform. If the drone is in the second part, it will shutdown.
             :return command: command in global reference frame (vx, vy, vyaw, height), list
         """
-        # # return to starting area
-        # if self._first_part:
-        #     self._first_part = False
-        #     self._search_points = [self._init_position]
-        #     self._search_points_idx = 0
+        # return to starting area
+        if self._first_part:
+            # smoothly approach ground for certain amount of time
+            self._reset_counter += 1
+            if self._reset_counter > self.params.reset_counter_max:
+                self._first_part = False
+                self._search_points = [self._init_position]
+                self._search_points_idx = 0
 
-        #     self._state = "takeoff"
-        #     if self.params.verb: print("_reset: reset -> takeoff")
+                self._state = "takeoff"
+                if self.params.verb: print("_reset: reset -> takeoff")
         
-        # # update applied height
-        # self._updateAppliedHeight(desired_height=0.0)
-        # return [0.0, 0.0, 0.0, self._applied_height]
+            # update applied height
+            # self._updateAppliedHeight(desired_height=0.0)
+            # return [0.0, 0.0, 0.0, self._applied_height]
+            return (0.0, 0.0, 0.0, 0.0)
 
+        # second part: shut down
         return (0.0, 0.0, 0.0, 0.0)
     
     def _yaw2command(self, desired_yaw, yaw_speed, goal_in_polygon, speed_max, speed_min):
@@ -381,8 +387,8 @@ class MyController():
             :return isTrue: wheather or not the drone encountered a transition, bool
         """
         # check if drone is in landing or starting region
-        if ((self._first_part and sensor_data['x_global'] < self.params.map_starting_region_x[1]) \
-            or (not self._first_part and sensor_data['x_global'] > self.params.map_landing_region_x[0])):
+        if ((self._first_part and sensor_data['x_global'] < self.params.map_landing_region_x[0]) \
+            or (not self._first_part and sensor_data['x_global'] > self.params.map_starting_region_x[1])):
             return False
         
         # if self._applied_height-sensor_data['range_down'] > self.params.sea_height_delta:
@@ -398,14 +404,20 @@ class MyController():
         """
         Covnert the command from the global to the local reference frame. Note that positive yaw is 
         defined by the crazyflie in the opposite direction than by this code and therefore, it is
-        inverted.
+        inverted. Also, the yaw rate is converted from radians per seconds to degrees per second.
+        These transformations are not necessary in simulation.
             :param sensor_data: measurement data from crazyflie, dict
             :return command: command in global reference frame (vx, vy, vyaw, height), list
             :return local_command: command in local reference frame (vx, vy, vyaw, height), list
         """
         vx = command[0]*np.cos(sensor_data['yaw']) + command[1]*np.sin(sensor_data['yaw'])
         vy = -command[0]*np.sin(sensor_data['yaw']) + command[1]*np.cos(sensor_data['yaw'])
-        return [vx, vy, -command[2], command[3]]
+
+        if self.params.simulation:
+            vyaw = command[2]
+        else:
+            vyaw = - (command[2]/np.pi) * 180
+        return [vx, vy, vyaw, command[3]]
     
     def _dist2point(self, sensor_data, point):
         """
@@ -465,16 +477,17 @@ class MyController():
         if not self._first_part: 
             self._search_points = [self._init_position]
             return
+        else: # first part
         
-        # first part: search for landing platform
-        # count the number of polygons in the lower and upper part of the landing region
-        upper_counter, lower_counter = self._countObstaclesInLowerUpperParts()
+            # first part: search for landing platform
+            # count the number of polygons in the lower and upper part of the landing region
+            upper_counter, lower_counter = self._countObstaclesInLowerUpperParts()
 
-        # search first the part with fewer polygons
-        if upper_counter > lower_counter:
-            self._search_points = self.params.path_search_points_lower + self.params.path_search_points_upper
-        else:
-            self._search_points = self.params.path_search_points_upper + self.params.path_search_points_lower
+            # search first the part with fewer polygons
+            if upper_counter > lower_counter:
+                self._search_points = self.params.path_search_points_lower + self.params.path_search_points_upper
+            else:
+                self._search_points = self.params.path_search_points_upper + self.params.path_search_points_lower
 
     def _countObstaclesInLowerUpperParts(self):
         """

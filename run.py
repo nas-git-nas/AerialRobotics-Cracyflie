@@ -114,7 +114,7 @@ def main():
             controller.setLanding()
 
         # check if stop command was sent
-        if np.allclose(command, (0.0, 0.0, 0.0, 0.0)) or keythread.key_kill:
+        if keythread.key_kill:
             drone.setStopCommand()
             print("main: shutting down crazyflie")
             break
@@ -128,6 +128,7 @@ def main():
         if step_time < params.control_loop_period:
             time.sleep(params.control_loop_period - step_time)
 
+    drone.setStopCommand()
     print("main: join keyboard thread")
     keythread.join()
 
@@ -137,8 +138,8 @@ if __name__ == '__main__':
     main()
 
 
-    """
-    Questions:
-    
-    - distance between obstacles
-    - zero of range sensors"""
+
+"""
+Questions:
+- distance between obstacles: unknown but more than in simulation  
+"""
