@@ -161,16 +161,18 @@ class CrazyflieConnection():
         elif yaw - self._sensor_data["yaw"] <= -np.pi:
             yaw += 2 * np.pi
 
-        alpha = 0.5
-
+        alpha = 1.0
         self._sensor_data["x_global"] = alpha * x_global + (1 - alpha) * self._sensor_data["x_global"]
         self._sensor_data["y_global"] = alpha * y_global + (1 - alpha) * self._sensor_data["y_global"]
         self._sensor_data["yaw"] = alpha * yaw + (1 - alpha) * self._sensor_data["yaw"]
+        self._sensor_data["range_down"] =  alpha * down + (1 - alpha) * self._sensor_data["range_down"]
+
+        alpha = 0.5
         self._sensor_data["range_front"] = alpha * front + (1 - alpha) * self._sensor_data["range_front"]
         self._sensor_data["range_back"] = alpha * back + (1 - alpha) * self._sensor_data["range_back"]
         self._sensor_data["range_left"] = alpha * left + (1 - alpha) * self._sensor_data["range_left"]
         self._sensor_data["range_right"] = alpha * right + (1 - alpha) * self._sensor_data["range_right"]
-        self._sensor_data["range_down"] =  alpha * down + (1 - alpha) * self._sensor_data["range_down"]
+        
 
         # print(f"yaw: meas={round(np.rad2deg(yaw), 2)}, filtered={round(np.rad2deg(self._sensor_data['yaw']), 2)}")
 

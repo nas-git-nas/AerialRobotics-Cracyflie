@@ -35,12 +35,12 @@ class Parameters():
         """
         self.sea_alpha_yaw = 0.3 #0.15 # update rate of the heading theta
         self.sea_alpha_speed = 1.0 # update rate of the speed
-        self.sea_alpha_height = 0.2 # update rate of the height
+        self.sea_alpha_height = 0.4 # update rate of the height
         self.sea_speed_max = 0.15 #0.25 
         self.sea_speed_min = 0.02 #0.01
-        self.sea_height_ground = 0.35
+        self.sea_height_ground = 0.3
         self.sea_height_platform = self.sea_height_ground - 0.1
-        self.sea_height_delta = 0.06    § # height difference for platform detection
+        self.sea_height_delta = 0.04 # height difference for platform detection
         self.sea_point_reached_dist = 0.08 # distance to point when it is considered reached
 
         """
@@ -53,7 +53,7 @@ class Parameters():
         self.explore_yaw_error = 0.05
         self.explore_speed_min = 0.02
         self.explore_counter_max_init = 50
-        self.explore_counter_delta = 25
+        self.explore_counter_delta = 5
 
         """
         LAND
@@ -88,3 +88,9 @@ class Parameters():
         self.nav_polygon_filter_dist = 1.2/self.map_res # filter polygons with a distance smaller than this value
         self.nav_point_reached_dist = 0.08 # in meters, distance to a point to be considered as reached
         self.nav_yaw_correction = 0.35 # in radians, yaw correction to move away from obstacle if drone is inside polygon
+
+        """
+        CRACYFLIE
+        - crazyflie related constans in CrazyflieConnection
+        """
+        self.crazy_alpha = 0.7 # updating rate of crazyflie's horizontal range sensors

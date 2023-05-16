@@ -45,8 +45,9 @@ class MyController():
         State machine:
             - takeoff
             - search (search for landing or starting platform)
+            - explore (turn the drone to explore map)
             - land
-            - reset (return to starting platform or stop)
+            - reset (either transition from first to second part or shutdown the drone)
         """
         self._state = "takeoff"
 
@@ -75,6 +76,9 @@ class MyController():
         self._explore_counter_max = self.params.explore_counter_max_init # maximum counter for exploring
 
     def setLanding(self):
+        """
+        Force landing with keyboard interrupt
+        """
         # transition to landing
         if self._applied_height > 0.02:
             if self.params.verb and (self._state != "land"): 
@@ -85,21 +89,25 @@ class MyController():
                 print("setLanding: keyboard -> reset")
             self._state = "reset"
 
-    # Don't change the method name of 'step_control'
     def step_control(self, sensor_data):
+        """
+        One step of the main control loop. Contains the state machine,
+        draws the map and converts the command from the global to the 
+        local reference frame.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return local_command: command in local reference frame (vx, vy, yaw, height), list
+        """
         # measure time of entire control loop
         step_start_time = time.time()
 
         # global path planner: state machine
-        desired_command = [0.0, 0.0, 0.0, 0.0]
+        desired_command = [0.0, 0.0, 0.0, 0.0] # dummy command for visualization
         if self._state == "takeoff":
             real_command = self._takeoff(sensor_data)
         elif self._state == "search":                 
             real_command, desired_command = self._search(sensor_data)
         elif self._state == "explore":
-            real_command, desired_command = self._explore(sensor_data)
-        elif self._state == "scan":
-            real_command, desired_command = self._scan(sensor_data)       
+            real_command, desired_command = self._explore(sensor_data)      
         elif self._state == "land":
             real_command = self._land(sensor_data)
         elif self._state == "reset":
@@ -107,26 +115,28 @@ class MyController():
         else:
             raise Exception("Invalid state")
         
-        # draw map to image
+        # visualize map
         if self.params.vis:
             self.vis.drawMap(sensor_data=sensor_data, real_command=real_command, desired_command=desired_command)
 
-        # convert command from global to local frame
+        # convert command from global to local reference frame
         local_command = self._gloabal2local(sensor_data=sensor_data, command=real_command)
 
-        # sleep to ensure no rush
+        # sleep to ensure no rush (only in simulation, with crazyflie this is done in the main)
         if self.params.simulation:
             step_time = time.time() - step_start_time
             if step_time < self.params.control_loop_period:
                 time.sleep(self.params.control_loop_period - step_time)
 
-        # print(f"yaw: {sensor_data['yaw']}")
-
-        # convert command from global to local frame
         return local_command
         
 
     def _takeoff(self, sensor_data):
+        """
+        First state of state machine used to takeoff. Transitions always to the state 'search'.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return command: command in global reference frame (vx, vy, yaw, height), list
+        """
         if sensor_data['range_down'] < self.params.sea_height_ground-0.03:
             self._applied_height += np.maximum(0.005 * (self.params.sea_height_ground-sensor_data['range_down'])/self.params.sea_height_ground, 0.002)
             command = [0.0, 0.0, 0.0, self._applied_height]
@@ -141,6 +151,17 @@ class MyController():
         return command
     
     def _search(self, sensor_data):
+        """
+        State of the state machine used to find landing platform. In the first part the
+        drone moves towards the landing region and searches there for the platform. In the
+        second part the drone moves towards the starting region and searches there for the
+        platform. Transitions to state 'land' if platform is found. Otherwise, it transitions
+        to state 'explore' if explore counter reached its max. and the drone is not inside any
+        polygon.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return real_command: command in global reference frame applied to the drone (vx, vy, vyaw, height), list
+            :return desired_command: command in global reference frame that would be desired (before the smoothing), list
+        """
         # Update the map
         self.nav.updateMap(sensor_data=sensor_data)
 
@@ -167,7 +188,7 @@ class MyController():
             # reset counter and set explore yaw
             self._explore_counter = 0
             self._explore_counter_max += self.params.explore_counter_delta
-            self._explore_yaw = sensor_data["yaw"] + np.pi/2
+            self._explore_yaw = sensor_data["yaw"] + np.pi/4
             self._explore_pos = (sensor_data["x_global"], sensor_data["y_global"])
 
             # transition to explore
@@ -192,6 +213,13 @@ class MyController():
         return real_command, desired_command
     
     def _explore(self, sensor_data):
+        """
+        State of the state machine used to explore the map. Turns the drone around the z-axis 
+         by a certain amount and then, transitions back to state 'search'.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return real_command: command in global reference frame applied to the drone (vx, vy, vyaw, height), list
+            :return desired_command: command in global reference frame that would be desired (before the smoothing), list
+        """
         # Update the map
         self.nav.updateMap(sensor_data=sensor_data)
         
@@ -217,7 +245,7 @@ class MyController():
         real_command, desired_command = self._yaw2command(
             desired_yaw=desired_yaw, 
             yaw_speed=self.params.explore_yaw_speed,
-            goal_in_polygon=False, 
+            goal_in_polygon=None, 
             speed_max=self.params.explore_speed_min, 
             speed_min=self.params.explore_speed_min,
         )
@@ -226,7 +254,14 @@ class MyController():
         return real_command, desired_command
     
     def _land(self, sensor_data):
-        
+        """
+        State of the state machine used to land the droen. First, drone continuous to move in the same direction
+        as when transitioning from state 'search' to 'land' for a certain distance to make sure that
+        it does not land on the edge of the platform. Second, the drone lands and transitions to the 
+        state 'reset'.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return command: command in global reference frame (vx, vy, vyaw, height), list
+        """     
         # continue moving in same direction for a fixed distance
         if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist:
             # update applied height
@@ -244,6 +279,11 @@ class MyController():
         return [0.0, 0.0, 0.0, self._applied_height]
     
     def _reset(self):
+        """
+        State of the state machine used to reset the droen. If the drone is in the first part, it will transition to
+        the state 'takeoff' and search the starting platform. If the drone is in the second part, it will shutdown.
+            :return command: command in global reference frame (vx, vy, vyaw, height), list
+        """
         # # return to starting area
         # if self._first_part:
         #     self._first_part = False
@@ -260,6 +300,17 @@ class MyController():
         return (0.0, 0.0, 0.0, 0.0)
     
     def _yaw2command(self, desired_yaw, yaw_speed, goal_in_polygon, speed_max, speed_min):
+        """
+        Converts the desired yaw into a command. Makes a smooth approximation between the last
+        applied yaw and the desired one to prevent command jittering.
+            :param desired_yaw: desired yaw in radians, float
+            :param yaw_speed: yaw rate in degrees per seconds, float
+            :param goal_in_polygon: indicates in which polygon the goal is (None if not inside any polygon), int
+            :param speed_max: maximum applied horizontal speed, float
+            :param speed_min: minimum applied horizontal speed, float
+            :return real_command: command in global reference frame applied to the drone (vx, vy, vyaw, height), list
+            :return desired_command: command in global reference frame that would be desired (before the smoothing), list
+        """
         # if desired theta is None (no path was found), use last theta
         if desired_yaw is None:
             desired_yaw = self._applied_yaw
@@ -267,7 +318,7 @@ class MyController():
                 print(f"_yaw2command: No path was found, using last yaw={np.round(np.rad2deg(desired_yaw),1)}°")
 
         # if goal is inside polygon, use last theta
-        if goal_in_polygon:
+        if goal_in_polygon is not None:
             desired_yaw = self._applied_yaw
             if self.params.verb:
                 print(f"_yaw2command: Goal inside polygon, using last yaw={np.round(np.rad2deg(desired_yaw),1)}°")
@@ -289,6 +340,10 @@ class MyController():
         return real_command, desired_command
     
     def _updateAppliedYaw(self, desired_yaw):
+        """
+        Make a smooth approximation (exponential moving average) of the applied yaw by using the desired yaw.
+            :param desired_yaw: desired yaw in radians
+        """
         # normalize applied yaw to (-pi, pi]
         if self._applied_yaw > np.pi:
             self._applied_yaw -= 2*np.pi
@@ -306,13 +361,25 @@ class MyController():
         self._applied_yaw = (1-self.params.sea_alpha_yaw) * self._applied_yaw + self.params.sea_alpha_yaw * desired_yaw
     
     def _updateAppliedSpeed(self, desired_speed):
+        """
+        Make a smooth approximation (exponential moving average) of the applied speed by using the desired speed.
+            :param desired_speed: desired horizontal speed in meters per seconds
+        """
         self._applied_speed = (1-self.params.sea_alpha_speed) * self._applied_speed + self.params.sea_alpha_speed * desired_speed
     
     def _updateAppliedHeight(self, desired_height):
+        """
+        Make a smooth approximation (exponential moving average) of the applied height by using the desired height.
+            :param desired_height: desired height in meters
+        """
         self._applied_height = (1-self.params.sea_alpha_height) * self._applied_height + self.params.sea_alpha_height * desired_height
     
     def _platformTransition(self, sensor_data):
-        
+        """
+        Detect a when the drone transitions from the searching area to a platform.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return isTrue: wheather or not the drone encountered a transition, bool
+        """
         # check if drone is in landing or starting region
         if ((self._first_part and sensor_data['x_global'] < self.params.map_starting_region_x[1]) \
             or (not self._first_part and sensor_data['x_global'] > self.params.map_landing_region_x[0])):
@@ -328,16 +395,37 @@ class MyController():
         return False
     
     def _gloabal2local(self, sensor_data, command):
+        """
+        Covnert the command from the global to the local reference frame. Note that positive yaw is 
+        defined by the crazyflie in the opposite direction than by this code and therefore, it is
+        inverted.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return command: command in global reference frame (vx, vy, vyaw, height), list
+            :return local_command: command in local reference frame (vx, vy, vyaw, height), list
+        """
         vx = command[0]*np.cos(sensor_data['yaw']) + command[1]*np.sin(sensor_data['yaw'])
         vy = -command[0]*np.sin(sensor_data['yaw']) + command[1]*np.cos(sensor_data['yaw'])
         return [vx, vy, -command[2], command[3]]
     
     def _dist2point(self, sensor_data, point):
+        """
+        Calculate the distance between the current drone position and a point.
+            :param sensor_data: measurement data from crazyflie, dict
+            :param point: point on map (x,y), tuble
+        """
         v_x = point[0] - sensor_data['x_global']
         v_y = point[1] - sensor_data['y_global']
         return np.sqrt(v_x**2 + v_y**2)
     
     def _checkPoint(self, sensor_data, dist, goal_in_polygon):
+        """
+        Verify if the drone reached its goal and set the next setpoint as goal in this case.
+        If the goal is inside a polygon, continue with the next setpoint as well.
+            :param sensor_data: measurement data from crazyflie, dict
+            :param goal_in_polygon: indicates in which polygon the goal is (None if not inside any polygon), int
+            :param dist: critical distance, goal is considered to be reached if drone is closer, float
+            :return goal_reached: True if drone is closer than dist w.r.t. goal, otherwise return False, bool
+        """
         # increase point index if goal is in polygon
         if goal_in_polygon is not None:
             self._incPointIndex()
@@ -357,6 +445,14 @@ class MyController():
         return False
     
     def _incPointIndex(self):
+        """
+        Set next setpoint as goal by increasing the point index. If the end of the search points is reached, 
+        then add points from the current search area. Hence, this will be search points from the landing area 
+        during the first part and search points from the starting area during the second part. Before adding
+        the search points during the first part, the algorithm checks if there are more obstacles in the upper
+        part of the landing region (y>=1.5) or in the lower part (y<1.5). Then, the drone explores first the
+        region with less obstacles.
+        """
         # continue searching if not all points are yet explored
         self._search_points_idx += 1
         if self._search_points_idx < len(self._search_points):
@@ -381,28 +477,34 @@ class MyController():
             self._search_points = self.params.path_search_points_upper + self.params.path_search_points_lower
 
     def _countObstaclesInLowerUpperParts(self):
-            # get all (unfiltered polygons)
-            polygons = self.nav.get('unfiltered_polygons')
+        """
+        Count the number of obstacles in the upper part of the landing region (y>=1.5) 
+         and in the lower part (y<1.5) to decide where to search first for the platform.
+            :return upper_counter: number of obstacles with y >= 1.5 and x > 3.5, int
+            :return lower_counter: number of obstacles with y < 1.5 and x > 3.5, int
+        """
+        # get all (unfiltered polygons)
+        polygons = self.nav.get('unfiltered_polygons')
 
-            # count polygons in upper and lower landing region
-            upper_counter = 0
-            lower_counter = 0
-            for poly in polygons:
-                poly_mean = np.mean(np.array(poly), axis=0)
+        # count polygons in upper and lower landing region
+        upper_counter = 0
+        lower_counter = 0
+        for poly in polygons:
+            poly_mean = np.mean(np.array(poly), axis=0)
 
-                # ignore polygons outside of the landing region
-                if poly_mean[0] < self.params.map_landing_region_x[0] / self.params.map_res:
-                    continue
+            # ignore polygons outside of the landing region
+            if poly_mean[0] < self.params.map_landing_region_x[0] / self.params.map_res:
+                continue
 
-                if poly_mean[1] > ((self.params.map_size_y[1]-self.params.map_size_y[0])/2) / self.params.map_res:
-                    upper_counter += 1
-                else:
-                    lower_counter += 1
-            
-            if self.params.verb:
-                print(f"_incPointIndex: upper_counter: {upper_counter}, lower_counter: {lower_counter}")
+            if poly_mean[1] > ((self.params.map_size_y[1]-self.params.map_size_y[0])/2) / self.params.map_res:
+                upper_counter += 1
+            else:
+                lower_counter += 1
+        
+        if self.params.verb:
+            print(f"_incPointIndex: upper_counter: {upper_counter}, lower_counter: {lower_counter}")
 
-            return upper_counter, lower_counter
+        return upper_counter, lower_counter
 
 
 
