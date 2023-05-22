@@ -100,6 +100,8 @@ class MyController():
             real_command = self._takeoff(sensor_data)
         elif self._state == "search":                 
             real_command, desired_command = self._search(sensor_data)
+        elif self._state == "detect_pad":
+            real_command = self._detect_pad(sensor_data)
         elif self._state == "explore":
             real_command, desired_command = self._explore(sensor_data)      
         elif self._state == "land":
@@ -161,13 +163,14 @@ class MyController():
 
         # check if drone is over platform     
         if self._platformTransition(sensor_data=sensor_data):
-            # transition to landing
-            self._state = "land"
-            if self.params.verb: print("_search: search -> land")
+            # transition to detect pad
+            self._state = "detect_pad"
+            if self.params.verb: print("_search: search -> detect_pad")
 
             # calculate landing velocity and position where platform was detected
             self._land_vel = (np.cos(self._applied_yaw)*self.params.land_speed, np.sin(self._applied_yaw)*self.params.land_speed)
             self._land_pos = (sensor_data["x_global"], sensor_data["y_global"])
+            self.params.control_points.append(self._land_pos)
 
             # stop moving
             command = [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
@@ -212,6 +215,37 @@ class MyController():
 
         # return desired and real command
         return real_command, desired_command
+    
+    # Detect landing platform
+    # The landing pad is 30x30cm, and the drone should land in the middle of this plateform
+    def _detect_pad(self, sensor_data):
+        """
+        State of the state machine used to detect the landing platform.
+            :param sensor_data: measurement data from crazyflie, dict
+            :return command: command in global reference frame (vx, vy, vyaw, height), list
+        """
+
+        self.params.counter_straight += 1
+        if self.params.counter_straight < 15:
+            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+        
+        if self._platformTransition(sensor_data=sensor_data) and self.params.inner_state == 0:
+            self.params.inner_state = 1
+            self.params.control_points.append((sensor_data["x_global"], sensor_data["y_global"]))
+        elif self._platformTransition(sensor_data=sensor_data) and self.params.inner_state == 1:
+            self.params.inner_state = 2
+        
+        if self.params.inner_state == 0:
+            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+        elif self.params.inner_state == 1:
+            return [-self._land_vel[0], -self._land_vel[1], 0.0, self._applied_height]
+        elif self.params.inner_state == 2:
+            print("OKKKKKKKK")
+        
+        
+        self._state = "land"
+        if self.params.verb: print("_detect_pad: detect_pad -> land")
+        return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
     
     def _explore(self, sensor_data):
         """
@@ -263,12 +297,12 @@ class MyController():
             :param sensor_data: measurement data from crazyflie, dict
             :return command: command in global reference frame (vx, vy, vyaw, height), list
         """     
-        # continue moving in same direction for a fixed distance
-        if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist:
-            # update applied height
-            self._updateAppliedHeight(desired_height=self.params.sea_height_platform)
+        # # continue moving in same direction for a fixed distance
+        # if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist:
+        #     # update applied height
+        #     self._updateAppliedHeight(desired_height=self.params.sea_height_platform)
 
-            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+        #     return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         
         # land
         if sensor_data['range_down'] > 0.03:
@@ -392,7 +426,7 @@ class MyController():
             return False
         
         # if self._applied_height-sensor_data['range_down'] > self.params.sea_height_delta:
-        if self.params.sea_height_ground-sensor_data['range_down'] > self.params.sea_height_delta:
+        if np.abs(self.params.sea_height_ground-sensor_data['range_down']) > self.params.sea_height_delta:
             self._applied_height = sensor_data['range_down']
             if self.params.verb:
                 print("_platformTransition: transition detected")

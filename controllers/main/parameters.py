@@ -55,6 +55,14 @@ class Parameters():
         self.explore_counter_max_init = 100
         self.explore_counter_delta = 0
 
+
+        """
+        DETECT_PAD
+        """
+        self.counter_straight = 0
+        self.inner_state = 0
+        self.control_points = []
+
         """
         LAND
         - state land in MyController
@@ -109,3 +117,5 @@ class Parameters():
             self.sea_speed_max = 0.2
             self.explore_counter_max_init = 125
             self.nav_object_extention = int(round(0.08/self.map_res, 0)) # extention of the objects in meters
+            self.explore_speed_max = 0.0
+            self.explore_speed_min = 0.0
