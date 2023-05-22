@@ -1,7 +1,10 @@
 import numpy as np
-import cv2
+
 import time
 import copy    
+import sys, os
+sys.path.append(os.path.abspath("C:/Users/hendr/anaconda3/envs/aerial2/Lib/site-packages"))
+import cv2
 from scipy.ndimage import binary_dilation, label
 
 try:

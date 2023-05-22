@@ -69,6 +69,10 @@ class MyController():
 
         self._reset_counter = 0 # counter for approaching ground during reset (only in first part)
 
+        self.counter_straight = 0
+        self.inner_state = 0
+        self.control_points = []
+
     def setLanding(self):
         """
         Force landing with keyboard interrupt
@@ -161,7 +165,7 @@ class MyController():
         # Update the map
         self.nav.updateMap(sensor_data=sensor_data)
 
-        # check if drone is over platform     
+        # check if drone is over platform
         if self._platformTransition(sensor_data=sensor_data):
             # transition to detect pad
             self._state = "detect_pad"
@@ -169,8 +173,9 @@ class MyController():
 
             # calculate landing velocity and position where platform was detected
             self._land_vel = (np.cos(self._applied_yaw)*self.params.land_speed, np.sin(self._applied_yaw)*self.params.land_speed)
-            self._land_pos = (sensor_data["x_global"], sensor_data["y_global"])
-            self.params.control_points.append(self._land_pos)
+            self._land_pos = np.array([sensor_data["x_global"], sensor_data["y_global"]])
+            self._land_height = sensor_data["range_down"]
+            self.control_points.append(self._land_pos)
 
             # stop moving
             command = [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
@@ -224,28 +229,51 @@ class MyController():
             :param sensor_data: measurement data from crazyflie, dict
             :return command: command in global reference frame (vx, vy, vyaw, height), list
         """
-
-        self.params.counter_straight += 1
-        if self.params.counter_straight < 15:
-            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         
-        if self._platformTransition(sensor_data=sensor_data) and self.params.inner_state == 0:
-            self.params.inner_state = 1
-            self.params.control_points.append((sensor_data["x_global"], sensor_data["y_global"]))
-        elif self._platformTransition(sensor_data=sensor_data) and self.params.inner_state == 1:
-            self.params.inner_state = 2
-        
-        if self.params.inner_state == 0:
+        self.counter_straight += 1
+        if (self.inner_state == 0) and (self.counter_straight < 15):
             return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
-        elif self.params.inner_state == 1:
+        elif (self.inner_state == 0) and (self._platformTransition(sensor_data=sensor_data)):
+            self.inner_state = 1
+            self.counter_straight = 0
+            self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
+        
+        elif  (self.inner_state == 1) and (self.counter_straight < 20):
             return [-self._land_vel[0], -self._land_vel[1], 0.0, self._applied_height]
-        elif self.params.inner_state == 2:
-            print("OKKKKKKKK")
+        elif (self.inner_state == 1):
+            self.inner_state = 2
+            self._applied_height = self._land_height
         
+        elif (self.inner_state == 2) and (self._platformTransition(sensor_data=sensor_data)):
+            self.inner_state = 3
+            self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
         
-        self._state = "land"
-        if self.params.verb: print("_detect_pad: detect_pad -> land")
-        return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+        if self.inner_state == 0:
+            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+        elif self.inner_state == 1:
+            return [-self._land_vel[0], -self._land_vel[1], 0.0, self._applied_height]
+        elif self.inner_state == 2:
+            if np.abs(self._land_vel[0]) > np.abs(self._land_vel[1]):
+                return [0., 0.1, 0.0, self._applied_height]
+            else:
+                return [0.1, 0, 0.0, self._applied_height]
+        elif self.inner_state == 3:
+            print(self.control_points)
+            self._land_pos = self._compute_goal_pos()
+            print(self._land_pos)
+            goal_dir = np.array([self._land_pos[0]-sensor_data["x_global"], self._land_pos[1]-sensor_data["y_global"]])
+            orientation_x = np.array([np.cos(self._applied_yaw), np.cos(self._applied_yaw)])
+            orientation_y = np.array([np.cos(self._applied_yaw), -np.cos(self._applied_yaw)])
+            vx = np.dot(goal_dir,orientation_x)/np.linalg.norm(orientation_x)
+            vy = np.dot(goal_dir,orientation_y)/np.linalg.norm(orientation_y)
+            speed = 0.4
+            v = np.array([vx*speed, vy*speed])
+            print("v: {}".format(v))
+            self._land_vel = (v[0],v[1])
+            self._state = "land"
+            if self.params.verb: print("_detect_pad: detect_pad -> land")
+            return [0., 0., 0.0, self._applied_height]
+        
     
     def _explore(self, sensor_data):
         """
@@ -298,19 +326,21 @@ class MyController():
             :return command: command in global reference frame (vx, vy, vyaw, height), list
         """     
         # # continue moving in same direction for a fixed distance
-        # if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist:
-        #     # update applied height
-        #     self._updateAppliedHeight(desired_height=self.params.sea_height_platform)
-
-        #     return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+        #if self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist:
+        if self._dist2point(sensor_data=sensor_data, point=self._land_pos) > self.params.land_point_reached_dist:
+            # update applied height
+            self._updateAppliedHeight(desired_height=self.params.sea_height_platform)
+            print("a: {}".format([self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]))
+            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         
         # land
         if sensor_data['range_down'] > 0.03:
             self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.sea_height_ground, 0.004)
+            print("b: {}".format(sensor_data['range_down']))
         else:
             self._state = "reset"
             if self.params.verb: print("_land: land -> reset")
-        
+        print("c: {}".format([0.0, 0.0, 0.0, self._applied_height]))
         return [0.0, 0.0, 0.0, self._applied_height]
     
     def _reset(self):
@@ -426,7 +456,7 @@ class MyController():
             return False
         
         # if self._applied_height-sensor_data['range_down'] > self.params.sea_height_delta:
-        if np.abs(self.params.sea_height_ground-sensor_data['range_down']) > self.params.sea_height_delta:
+        if np.abs(self._applied_height-sensor_data['range_down']) > self.params.sea_height_delta:
             self._applied_height = sensor_data['range_down']
             if self.params.verb:
                 print("_platformTransition: transition detected")
@@ -434,6 +464,26 @@ class MyController():
         
         return False
     
+    def _compute_goal_pos(self):
+        if len(self.control_points) != 3:
+            print("problem: {}".format(len(self.control_points)))
+            return None
+        else:
+            dist_1 = np.linalg.norm(self.control_points[0]-self.control_points[1])
+            dist_2 = np.linalg.norm(self.control_points[1]-self.control_points[2])
+            dist_3 = np.linalg.norm(self.control_points[0]-self.control_points[2])
+            
+            if (dist_1 > dist_2) and (dist_1 > dist_3):
+                point = self.control_points[0] + 0.5 * (self.control_points[1] - self.control_points[0])
+                point = point + 0.7 * (self.control_points[2] - point)
+            elif (dist_2 > dist_1) and (dist_2 > dist_3):
+                point = self.control_points[1] + 0.5 * (self.control_points[2] - self.control_points[1])
+                point = point + 0.7 * (self.control_points[0] - point)
+            else:
+                point = self.control_points[0] + 0.5 * (self.control_points[2] - self.control_points[0])
+                point = point + 0.7 * (self.control_points[1] - point)
+            return point
+
     def _gloabal2local(self, sensor_data, command):
         """
         Covnert the command from the global to the local reference frame. Note that positive yaw is 
