@@ -66,7 +66,7 @@ class Parameters():
         - state land in MyController
         """
         self.land_speed = 0.05
-        self.land_point_reached_dist = 0.08 # in meters, continue to move in the same direction for this distance
+        self.land_point_reached_dist = 0.07 # in meters, continue to move in the same direction for this distance
 
         """
         RESET

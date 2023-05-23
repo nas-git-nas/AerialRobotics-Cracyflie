@@ -8,8 +8,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation 0.11853113202956773 -0.08763531949552114 0.9890755388324529 1.4916987655618072
-  position 1.143152023894245 -1.843090853391694 0.4829106012703706
+  orientation -0.488188217322811 -0.23939731636430345 0.8392622887898308 4.002367381493515
+  position 7.640875316021004 4.173673308389722 6.7890462003386824
   follow "crazyflie"
 }
 TexturedBackground {
@@ -347,7 +347,7 @@ DEF TAKE_OFF_PAD Solid {
   boundingObject USE PAD_SHAPE
 }
 DEF LANDING_PAD Solid {
-  translation 3.88 1.66 0.05
+  translation 3.88 1.93 0.05
   children [
     USE PAD_SHAPE
   ]
