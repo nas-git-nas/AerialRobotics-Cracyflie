@@ -246,23 +246,26 @@ class MyController():
         
         elif (self.inner_state == 2) and (self._platformTransition(sensor_data=sensor_data)):
             self.inner_state = 3
+            self.counter_straight = 0
             self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
-
+        
+        elif  (self.inner_state == 3) and (self.counter_straight < 20):
+            self._applied_height = self._land_height
+            if np.abs(self._land_vel[0]) > np.abs(self._land_vel[1]):
+                return [0., -0.1, 0.0, self._applied_height]
+            else:
+                return [-0.1, 0, 0.0, self._applied_height]
+        elif (self.inner_state == 3) and (self._platformTransition(sensor_data=sensor_data)):
+            self.inner_state = 4
+            self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
             print(self.control_points)
             self._land_pos = self._compute_goal_pos()
             print(self._land_pos)
             goal_dir = np.array([self._land_pos[0]-sensor_data["x_global"], self._land_pos[1]-sensor_data["y_global"]])
-            orientation_x = np.array([np.cos(self._applied_yaw), np.cos(self._applied_yaw)])
-            orientation_y = np.array([np.cos(self._applied_yaw), -np.cos(self._applied_yaw)])
-            vx = np.dot(goal_dir,orientation_x)/np.linalg.norm(orientation_x)
-            vy = np.dot(goal_dir,orientation_y)/np.linalg.norm(orientation_y)
-            speed = 0.4
-            v = np.array([vx*speed, vy*speed])
-            print("v: {}".format(v))
-            self._land_vel = (v[0],v[1])
-        
-        elif (self.inner_state == 3) and (self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist):
-            self.inner_state = 4
+            self._land_vel = goal_dir
+
+        elif (self.inner_state == 4) and (self._dist2point(sensor_data=sensor_data, point=self._land_pos) < self.params.land_point_reached_dist):
+            self.inner_state = 5
 
         if self.inner_state == 0:
             return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
@@ -274,8 +277,13 @@ class MyController():
             else:
                 return [0.1, 0, 0.0, self._applied_height]
         elif self.inner_state == 3:
-            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+            if np.abs(self._land_vel[0]) > np.abs(self._land_vel[1]):
+                return [0., -0.1, 0.0, self._applied_height]
+            else:
+                return [-0.1, 0, 0.0, self._applied_height]
         elif self.inner_state == 4:
+            return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
+        elif self.inner_state == 5:
             self._state = "land"
             if self.params.verb: print("_detect_pad: detect_pad -> land")
             return [0., 0., 0.0, self._applied_height]
@@ -462,23 +470,12 @@ class MyController():
         return False
     
     def _compute_goal_pos(self):
-        if len(self.control_points) != 3:
-            print("problem: {}".format(len(self.control_points)))
+        if len(self.control_points) != 4:
+            print("compute goal pos problem: {}".format(len(self.control_points)))
             return None
         else:
-            dist_1 = np.linalg.norm(self.control_points[0]-self.control_points[1])
-            dist_2 = np.linalg.norm(self.control_points[1]-self.control_points[2])
-            dist_3 = np.linalg.norm(self.control_points[0]-self.control_points[2])
-            print(dist_1,dist_2,dist_3)
-            if (dist_1 > dist_2) and (dist_1 > dist_3):
-                point = self.control_points[0] + 0.5 * (self.control_points[1] - self.control_points[0])
-                point = point + 0.7 * (self.control_points[2] - point)
-            elif (dist_2 > dist_1) and (dist_2 > dist_3):
-                point = self.control_points[1] + 0.5 * (self.control_points[2] - self.control_points[1])
-                point = point + 0.7 * (self.control_points[0] - point)
-            else:
-                point = self.control_points[0] + 0.5 * (self.control_points[2] - self.control_points[0])
-                point = point + 0.7 * (self.control_points[1] - point)
+            point = 0.25 * np.array([self.control_points[0][0]+self.control_points[1][0]+self.control_points[2][0]+self.control_points[3][0],
+                                self.control_points[0][1]+self.control_points[1][1]+self.control_points[2][1]+self.control_points[3][1]])
             return point
 
     def _gloabal2local(self, sensor_data, command):

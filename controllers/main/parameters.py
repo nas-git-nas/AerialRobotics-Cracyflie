@@ -52,7 +52,7 @@ class Parameters():
         self.explore_yaw_speed = 0.35 # constant yaw speed when searching
         self.explore_yaw_error = 0.05
         self.explore_speed_min = 0.02
-        self.explore_counter_max_init = 20
+        self.explore_counter_max_init = 50
         self.explore_counter_delta = 0
 
 

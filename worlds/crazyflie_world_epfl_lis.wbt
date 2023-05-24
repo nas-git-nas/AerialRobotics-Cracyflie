@@ -9,7 +9,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5213213096218127 0.5547376034502804 0.6484522214106738 2.005413800818235
-  position 0.9208937154894306 0.05884716071248983 4.076997340564667
+  position 1.3613980485207389 -2.1807887850467886 16.50822777033435
   follow "crazyflie"
 }
 TexturedBackground {
@@ -249,7 +249,7 @@ DEF OBSTACLE2 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE3 Solid {
-  translation 4.46 2.11 0.74
+  translation 4.46 2.23 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -273,7 +273,7 @@ DEF OBSTACLE5 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE6 Solid {
-  translation 3.73 1.54 0.75
+  translation 3.73 1.48 0.75
   children [
     DEF BOX_SHAPE Shape {
       appearance PBRAppearance {
@@ -347,7 +347,7 @@ DEF TAKE_OFF_PAD Solid {
   boundingObject USE PAD_SHAPE
 }
 DEF LANDING_PAD Solid {
-  translation 4.5 1 0.05
+  translation 4.37 1 0.05
   children [
     USE PAD_SHAPE
   ]
