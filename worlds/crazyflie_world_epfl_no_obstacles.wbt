@@ -9,7 +9,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5213213096218127 0.5547376034502804 0.6484522214106738 2.005413800818235
-  position 1.3613980485207389 -2.1807887850467886 16.50822777033435
+  position 1.4555676611837993 -2.659571021005921 19.16573659990914
   follow "crazyflie"
 }
 TexturedBackground {
@@ -219,7 +219,7 @@ DEF CHECKERBOARD_A4_25mm_8x6 Solid {
   name "checkerboard"
 }
 DEF OBSTACLE1 Solid {
-  translation 1.75 0.82 0.74
+  translation 1.75 -1.63 0.74
   children [
     DEF CYLINDER_SHAPE Shape {
       appearance PBRAppearance {
@@ -241,7 +241,7 @@ DEF OBSTACLE1 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE2 Solid {
-  translation 1.73 2.5 0.74
+  translation 1.73 -1.05 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -249,7 +249,7 @@ DEF OBSTACLE2 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE3 Solid {
-  translation 4.46 2.23 0.74
+  translation 4.46 -1.05 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -257,7 +257,7 @@ DEF OBSTACLE3 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE4 Solid {
-  translation 0.68 1.94 0.74
+  translation 0.68 -1.53 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -265,7 +265,7 @@ DEF OBSTACLE4 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE5 Solid {
-  translation 3.59 0.36 0.74
+  translation 3.59 -0.38 0.74
   children [
     USE CYLINDER_SHAPE
   ]
@@ -273,7 +273,7 @@ DEF OBSTACLE5 Solid {
   boundingObject USE CYLINDER_SHAPE
 }
 DEF OBSTACLE6 Solid {
-  translation 3.73 1.48 0.75
+  translation 3.73 -0.74 0.75
   children [
     DEF BOX_SHAPE Shape {
       appearance PBRAppearance {
@@ -294,7 +294,7 @@ DEF OBSTACLE6 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF OBSTACLE7 Solid {
-  translation 2.86 1.15 0.75
+  translation 2.86 -0.71 0.75
   children [
     USE BOX_SHAPE
   ]
@@ -302,7 +302,7 @@ DEF OBSTACLE7 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF OBSTACLE8 Solid {
-  translation 3 2.39 0.75
+  translation 3 -1.75 0.75
   children [
     USE BOX_SHAPE
   ]
@@ -318,7 +318,7 @@ DEF OBSTACLE9 Solid {
   boundingObject USE BOX_SHAPE
 }
 DEF OBSTACLE10 Solid {
-  translation 2.03 1.64 0.75
+  translation 2.03 -0.94 0.75
   children [
     USE BOX_SHAPE
   ]
@@ -347,7 +347,7 @@ DEF TAKE_OFF_PAD Solid {
   boundingObject USE PAD_SHAPE
 }
 DEF LANDING_PAD Solid {
-  translation 4.37 1 0.05
+  translation 4.5 1 0.05
   children [
     USE PAD_SHAPE
   ]

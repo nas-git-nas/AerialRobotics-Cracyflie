@@ -40,7 +40,7 @@ class Parameters():
         self.sea_speed_min = 0.02 #0.01
         self.sea_height_ground = 0.3
         self.sea_height_platform = self.sea_height_ground - 0.1
-        self.sea_height_delta = 0.04 # height difference for platform detection
+        self.sea_height_delta = 0.08 # height difference for platform detection
         self.sea_point_reached_dist = 0.1 # distance to point when it is considered reached
 
         """
@@ -54,12 +54,18 @@ class Parameters():
         self.explore_counter_max_init = 100
         self.explore_counter_delta = 0
 
+
+        """
+        DETECT_PAD
+        """
+        
+
         """
         LAND
         - state land in MyController
         """
         self.land_speed = 0.05
-        self.land_point_reached_dist = 0.1 # in meters, continue to move in the same direction for this distance
+        self.land_point_reached_dist = 0.07 # in meters, continue to move in the same direction for this distance
 
         """
         RESET
@@ -108,3 +114,5 @@ class Parameters():
             self.sea_speed_max = 0.2
             self.explore_counter_max_init = 125
             self.nav_object_extention = int(round(0.08/self.map_res, 0)) # extention of the objects in meters
+            self.explore_speed_max = 0.0
+            self.explore_speed_min = 0.0
