@@ -64,7 +64,7 @@ class MyController():
 
         self._explore_yaw = 0.0 # yaw goal of the drone when exploring
         self._explore_pos = (0.0, 0.0) # (x,y) position while exploring (keep it steady)
-        self._explore_counter = self.params.explore_counter_max_init # counter for exploring
+        self._explore_counter = self.params.explore_counter_max_init/2 # counter for exploring
         self._explore_counter_max = self.params.explore_counter_max_init # maximum counter for exploring
 
         self._reset_counter = 0 # counter for approaching ground during reset (only in first part)
@@ -298,9 +298,8 @@ class MyController():
                 if self.params.verb: print("_reset: reset -> takeoff")
         
             # update applied height
-            # self._updateAppliedHeight(desired_height=0.0)
-            # return [0.0, 0.0, 0.0, self._applied_height]
-            return (0.0, 0.0, 0.0, 0.0)
+            self._updateAppliedHeight(desired_height=0.01)
+            return [0.0, 0.0, 0.0, self._applied_height]
 
         # second part: shut down
         return (0.0, 0.0, 0.0, 0.0)
@@ -475,7 +474,7 @@ class MyController():
 
         # second part: return to starting platform
         if not self._first_part: 
-            self._search_points = [self._init_position]
+            self._search_points = self._getSearchSpiral(pos=self._init_position)
             return
         else: # first part
         
@@ -488,6 +487,41 @@ class MyController():
                 self._search_points = self.params.path_search_points_lower + self.params.path_search_points_upper
             else:
                 self._search_points = self.params.path_search_points_upper + self.params.path_search_points_lower
+
+    def _getSearchSpiral(self, pos):
+        """
+        Generate a spiral around a given position. This is used to search for the landing platform.
+            :param pos: center of the spiral, tuple
+            :return search_points: list of points to visit, list
+        """
+        first_part = [pos,  (pos[0]+0.15, pos[1]), (pos[0]+0.15, pos[1]+0.15), (pos[0]-0.15, pos[1]+0.15), (pos[0]-0.15, pos[1]-0.3), 
+                            (pos[0]+0.3, pos[1]-0.3), (pos[0]+0.3, pos[1]+0.3), (pos[0]-0.3, pos[1]+0.3), (pos[0]-0.3, pos[1]-0.45),
+                            (pos[0]+0.45, pos[1]-0.45), (pos[0]+0.45, pos[1]+0.45), (pos[0]-0.45, pos[1]+0.45), (pos[0]-0.45, pos[1]-0.45)]
+        second_part = [ (pos[0]+0.6, pos[1]-0.6), (pos[0]+0.6, pos[1]+0.6), (pos[0]-0.6, pos[1]+0.6), (pos[0]-0.6, pos[1]-0.75),
+                        (pos[0]+0.75, pos[1]-0.75), (pos[0]+0.75, pos[1]+0.75), (pos[0]-0.75, pos[1]+0.75), (pos[0]-0.75, pos[1]-0.9),
+                        (pos[0]+0.9, pos[1]-0.9), (pos[0]+0.9, pos[1]+0.9), (pos[0]-0.9, pos[1]+0.9), (pos[0]-0.9, pos[1]-1.05)]
+        third_part = [  (pos[0]+1.05, pos[1]-1.05), (pos[0]+1.05, pos[1]+1.05), (pos[0]-1.05, pos[1]+1.05), (pos[0]-1.05, pos[1]-1.2),
+                        (pos[0]+1.2, pos[1]-1.2), (pos[0]+1.2, pos[1]+1.2), (pos[0]-1.2, pos[1]+1.2), (pos[0]-1.2, pos[1]-1.35),
+                        (pos[0]+1.35, pos[1]-1.35), (pos[0]+1.35, pos[1]+1.35), (pos[0]-1.35, pos[1]+1.35), (pos[0]-1.35, pos[1]-1.5)]
+        fourth_part = [ (pos[0]+1.5, pos[1]-1.5), (pos[0]+1.5, pos[1]+1.5), (pos[0]-1.5, pos[1]+1.5), (pos[0]-1.5, pos[1]-1.65), 
+                        (pos[0]+1.65, pos[1]-1.65), (pos[0]+1.65, pos[1]+1.65), (pos[0]-1.65, pos[1]+1.65), (pos[0]-1.65, pos[1]-1.8),
+                        (pos[0]+1.8, pos[1]-1.8), (pos[0]+1.8, pos[1]+1.8), (pos[0]-1.8, pos[1]+1.8), (pos[0]-1.8, pos[1]-1.95)]
+        fifth_part = [  (pos[0]+1.95, pos[1]-1.95), (pos[0]+1.95, pos[1]+1.95), (pos[0]-1.95, pos[1]+1.95), (pos[0]-1.95, pos[1]-2.1),
+                        (pos[0]+2.1, pos[1]-2.1), (pos[0]+2.1, pos[1]+2.1), (pos[0]-2.1, pos[1]+2.1), (pos[0]-2.1, pos[1]-2.25),
+                        (pos[0]+2.25, pos[1]-2.25), (pos[0]+2.25, pos[1]+2.25), (pos[0]-2.25, pos[1]+2.25), (pos[0]-2.25, pos[1]-2.4)]
+        sixth_part = [  (pos[0]+2.4, pos[1]-2.4), (pos[0]+2.4, pos[1]+2.4), (pos[0]-2.4, pos[1]+2.4), (pos[0]-2.4, pos[1]-2.55),
+                        (pos[0]+2.55, pos[1]-2.55), (pos[0]+2.55, pos[1]+2.55), (pos[0]-2.55, pos[1]+2.55), (pos[0]-2.55, pos[1]-2.7),
+                        (pos[0]+2.7, pos[1]-2.7), (pos[0]+2.7, pos[1]+2.7), (pos[0]-2.7, pos[1]+2.7), (pos[0]-2.7, pos[1]-2.85),
+                        (pos[0]+2.85, pos[1]-2.85), (pos[0]+2.85, pos[1]+2.85), (pos[0]-2.85, pos[1]+2.85), (pos[0]-2.85, pos[1]-3.0)]
+        
+        # revisit several times region around expected starting position in case it is overlooked for some reason
+        search_points = first_part \
+                        + first_part + second_part \
+                        + first_part + second_part + third_part \
+                        + first_part + second_part + third_part + fourth_part \
+                        + first_part + second_part + third_part + fourth_part + fifth_part \
+                        + first_part + second_part + third_part + fourth_part + fifth_part + sixth_part
+        return search_points
 
     def _countObstaclesInLowerUpperParts(self):
         """

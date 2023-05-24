@@ -9,14 +9,14 @@ class Parameters():
         """
         self.verb = True
         self.vis = True
-        self.simulation = True
+        self.simulation = False
         self.control_loop_period = 0.03 # in seconds, period of the main loop       
 
         """
         PATH
         - all points for takeoff, search and return
         """
-        self.path_init_pos = (1.5, 1.0) # position of takeoff
+        self.path_init_pos = (1.0, 1.0) # position of takeoff
         self.path_first_point = (3.9,1.5) # (3.0,0.5) first point to fly to
         # self.path_search_points_lower = [(3.5,0.5), (4.0,0.5), (4.0,1.0), (3.5,1.0)]
         # self.path_search_points_upper = self.path_search_points_lower
@@ -35,7 +35,7 @@ class Parameters():
         """
         self.sea_alpha_yaw = 0.3 #0.15 # update rate of the heading theta
         self.sea_alpha_speed = 1.0 # update rate of the speed
-        self.sea_alpha_height = 0.2 # update rate of the height
+        self.sea_alpha_height = 0.8 # update rate of the height
         self.sea_speed_max = 0.15 #0.25 
         self.sea_speed_min = 0.02 #0.01
         self.sea_height_ground = 0.3
@@ -51,7 +51,6 @@ class Parameters():
         self.explore_speed_min = 0.02 # in meters/seconds, minimum speed to keep position while exploring
         self.explore_yaw_speed = 0.35 # constant yaw speed when searching
         self.explore_yaw_error = 0.05
-        self.explore_speed_min = 0.02
         self.explore_counter_max_init = 100
         self.explore_counter_delta = 0
 
@@ -60,12 +59,12 @@ class Parameters():
         - state land in MyController
         """
         self.land_speed = 0.05
-        self.land_point_reached_dist = 0.08 # in meters, continue to move in the same direction for this distance
+        self.land_point_reached_dist = 0.1 # in meters, continue to move in the same direction for this distance
 
         """
         RESET
         """
-        self.reset_counter_max = 5
+        self.reset_counter_max = 15
 
         """
         MAP
@@ -85,10 +84,10 @@ class Parameters():
         - navigation related constants in Navigation
         """
         self.nav_range_max = 1.5 # maximum range of the sensor in meters
-        self.nav_alpha = 0.4 # update rate of new measurements
+        self.nav_alpha = 0.55 # update rate of new measurements
         self.nav_gamma = 1.0 # discount factor of old measurements
         self.nav_threshold = 0.5 # threshold for occupied space
-        self.nav_object_extention = int(round(0.13/self.map_res, 0)) # extention of the objects in meters
+        self.nav_object_extention = int(round(0.08/self.map_res, 0)) # extention of the objects in meters
         self.nav_kernel_size = int(round(0.13/ self.map_res, 0))
         self.nav_polygon_filter_dist = 1.2/self.map_res # filter polygons with a distance smaller than this value
         self.nav_point_reached_dist = 0.1 # in meters, distance to a point to be considered as reached

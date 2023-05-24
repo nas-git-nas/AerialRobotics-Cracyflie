@@ -72,7 +72,6 @@ class KeyEventThread(threading.Thread):
                 break
             if keyboard.read_key() == "l":
                 self.key_land = True
-                break
             time.sleep(0.2) # press the key at leat for 0.2s
 
 def main():
@@ -109,15 +108,15 @@ def main():
         # determine control command
         command = controller.step_control(sensor_data=sensor_data)
 
-        # if keyboard command landing is True
-        if keythread.key_land:
-            controller.setLanding()
-
         # check if stop command was sent
-        if keythread.key_kill:
+        if keythread.key_kill or np.allclose(command, (0.0, 0.0, 0.0, 0.0)):
             drone.setStopCommand()
             print("main: shutting down crazyflie")
             break
+
+        # if keyboard command landing is True
+        if keythread.key_land:
+            controller.setLanding()
 
         # send control command to crazyflie
         drone.setCommand(command=command)
@@ -128,7 +127,6 @@ def main():
         if step_time < params.control_loop_period:
             time.sleep(params.control_loop_period - step_time)
 
-    drone.setStopCommand()
     print("main: join keyboard thread")
     keythread.join()
 
