@@ -35,7 +35,7 @@ class Parameters():
         """
         self.sea_alpha_yaw = 0.3 #0.15 # update rate of the heading theta
         self.sea_alpha_speed = 1.0 # update rate of the speed
-        self.sea_alpha_height = 0.8 # update rate of the height
+        self.sea_alpha_height = 1.0 # update rate of the height
         self.sea_speed_max = 0.15 #0.25 
         self.sea_speed_min = 0.02 #0.01
         self.sea_height_ground = 0.3

@@ -231,14 +231,14 @@ class MyController():
         """
         
         self.counter_straight += 1
-        if (self.inner_state == 0) and (self.counter_straight < 15):
+        if (self.inner_state == 0) and (self.counter_straight < 30):
             return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         elif (self.inner_state == 0) and (self._platformTransition(sensor_data=sensor_data)):
             self.inner_state = 1
             self.counter_straight = 0
             self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
         
-        elif  (self.inner_state == 1) and (self.counter_straight < 20):
+        elif  (self.inner_state == 1) and (self.counter_straight < 30):
             return [-self._land_vel[0], -self._land_vel[1], 0.0, self._applied_height]
         elif (self.inner_state == 1):
             self.inner_state = 2
@@ -249,7 +249,7 @@ class MyController():
             self.counter_straight = 0
             self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
         
-        elif  (self.inner_state == 3) and (self.counter_straight < 20):
+        elif  (self.inner_state == 3) and (self.counter_straight < 30):
             self._applied_height = self._land_height
             if np.abs(self._land_vel[0]) > np.abs(self._land_vel[1]):
                 return [0., -0.1, 0.0, self._applied_height]
