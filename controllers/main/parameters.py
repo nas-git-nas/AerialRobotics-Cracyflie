@@ -40,7 +40,7 @@ class Parameters():
         self.sea_speed_min = 0.02 #0.01
         self.sea_height_ground = 0.3
         self.sea_height_platform = self.sea_height_ground - 0.1
-        self.sea_height_delta = 0.08 # height difference for platform detection
+        self.sea_height_delta = 0.06 # height difference for platform detection
         self.sea_point_reached_dist = 0.1 # distance to point when it is considered reached
 
         """
