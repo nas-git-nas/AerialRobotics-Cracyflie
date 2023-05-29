@@ -51,7 +51,7 @@ class Parameters():
         self.explore_speed_min = 0.02 # in meters/seconds, minimum speed to keep position while exploring
         self.explore_yaw_speed = 0.35 # constant yaw speed when searching
         self.explore_yaw_error = 0.05
-        self.explore_counter_max_init = 100
+        self.explore_counter_max_init = 90
         self.explore_counter_delta = 0
 
 
@@ -70,7 +70,7 @@ class Parameters():
         """
         RESET
         """
-        self.reset_counter_max = 15
+        self.reset_counter_max = 8
 
         """
         MAP

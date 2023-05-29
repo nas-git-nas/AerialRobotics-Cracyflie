@@ -64,7 +64,7 @@ class MyController():
 
         self._explore_yaw = 0.0 # yaw goal of the drone when exploring
         self._explore_pos = (0.0, 0.0) # (x,y) position while exploring (keep it steady)
-        self._explore_counter = self.params.explore_counter_max_init/2 # counter for exploring
+        self._explore_counter = self.params.explore_counter_max_init/1.8 # counter for exploring
         self._explore_counter_max = self.params.explore_counter_max_init # maximum counter for exploring
 
         self._reset_counter = 0 # counter for approaching ground during reset (only in first part)
@@ -174,7 +174,8 @@ class MyController():
             # calculate landing velocity and position where platform was detected
             self._land_vel = np.array([np.cos(self._applied_yaw)*self.params.land_speed, np.sin(self._applied_yaw)*self.params.land_speed])
             self._land_pos = np.array([sensor_data["x_global"], sensor_data["y_global"]])
-            self._inter_point = self._land_pos + 0.75*self._land_vel
+            unit_direction = self._land_vel / np.linalg.norm(self._land_vel)
+            self._inter_point = self._land_pos + 0.15*unit_direction
             print("land vel: {}, land pos: {}, land inter:{}".format(self._land_vel,self._land_pos,self._inter_point))
             self._land_height = sensor_data["range_down"]
             self.control_points.append(self._land_pos)
@@ -326,7 +327,7 @@ class MyController():
         # land
         if sensor_data['range_down'] > 0.02:
             #self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.sea_height_ground, 0.004)
-            self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.sea_height_ground, 0.015)
+            self._applied_height -= np.maximum(0.01 * (sensor_data['range_down'])/self.params.sea_height_ground, 0.007)
         else:
             self._state = "reset"
             if self.params.verb: print("_land: land -> reset")
