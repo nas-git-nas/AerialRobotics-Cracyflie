@@ -229,28 +229,34 @@ class MyController():
             :param sensor_data: measurement data from crazyflie, dict
             :return command: command in global reference frame (vx, vy, vyaw, height), list
         """
-        
+        count = 20
         self.counter_straight += 1
-        if (self.inner_state == 0) and (self.counter_straight < 30):
+        if (self.inner_state == 0) and (self.counter_straight < count):
+            print("inner 0")
             return [self._land_vel[0], self._land_vel[1], 0.0, self._applied_height]
         elif (self.inner_state == 0) and (self._platformTransition(sensor_data=sensor_data)):
             self.inner_state = 1
             self.counter_straight = 0
             self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
+            print("inner 0 point")
         
-        elif  (self.inner_state == 1) and (self.counter_straight < 30):
+        elif  (self.inner_state == 1) and (self.counter_straight < count):
+            print("inner 1")
             return [-self._land_vel[0], -self._land_vel[1], 0.0, self._applied_height]
         elif (self.inner_state == 1):
             self.inner_state = 2
             self._applied_height = self._land_height
+            print("inner 1 point")
         
         elif (self.inner_state == 2) and (self._platformTransition(sensor_data=sensor_data)):
             self.inner_state = 3
             self.counter_straight = 0
             self.control_points.append(np.array([sensor_data["x_global"], sensor_data["y_global"]]))
+            print("inner 2")
         
-        elif  (self.inner_state == 3) and (self.counter_straight < 30):
+        elif  (self.inner_state == 3) and (self.counter_straight < count):
             self._applied_height = self._land_height
+            print("inner 3")
             if np.abs(self._land_vel[0]) > np.abs(self._land_vel[1]):
                 return [0., -0.1, 0.0, self._applied_height]
             else:
