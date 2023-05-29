@@ -25,7 +25,11 @@
 Simple example that connects to the first Crazyflie found, logs the Stabilizer
 and prints it to the consodrone. After 10s the application disconnects and exits.
 """
-from collections.abc import Callable, Iterable, Mapping
+
+#import sys
+#sys.path.append('C:/Users/hendr/anaconda3/envs/aerial2')
+from collections.abc import Iterable, Mapping
+from typing import Callable
 import logging
 import time
 from threading import Timer
