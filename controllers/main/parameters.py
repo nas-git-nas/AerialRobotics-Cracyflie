@@ -16,7 +16,7 @@ class Parameters():
         PATH
         - all points for takeoff, search and return
         """
-        self.path_init_pos = (1.0, 1.0) # position of takeoff
+        self.path_init_pos = (0.75, 1.5) # position of takeoff
         self.path_first_point = (3.9,1.5) # (3.0,0.5) first point to fly to
         # self.path_search_points_lower = [(3.5,0.5), (4.0,0.5), (4.0,1.0), (3.5,1.0)]
         # self.path_search_points_upper = self.path_search_points_lower
